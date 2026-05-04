@@ -7,7 +7,7 @@ gcc
 
 # Compilation
 
-git clone https://github.com/jahanzaibmir/Misery
+git clone https://github.com/jahanzaibmir/Misery.git
 
 cd Misery
 
