@@ -5,6 +5,10 @@ Misery is a windows malware/future Ransomware
 
 gcc
 
+TO install gcc on windows system: Use MSYS MINGW64 SHELL and type pacman -S mingw-w64-x86_64-gcc
+
+then add gcc to the path in powershell
+
 # Compilation
 
 git clone https://github.com/jahanzaibmir/Misery
