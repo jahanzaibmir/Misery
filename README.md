@@ -23,7 +23,7 @@ make
 Written by JAHANZAIB ASHRAF MIR
 from Scratch 
 
-## IGNORE
+#### IGNORE
 
 install choco for gcc: Set-ExecutionPolicy Bypass -Scope Process -Force; `
 [System.Net.ServicePointManager]::SecurityProtocol = 3072; `
