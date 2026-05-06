@@ -1,3 +1,4 @@
+/* THIS IS A TEST SCRIPT WITHOUT LINKAGE AND ALL CONGESTED
 /*
  * misery.c 
  * Author  : Jahanzaib Ashraf Mir
@@ -6,7 +7,7 @@
  * Notes   :
  *   - Personal research project
  *   - Focused on systems-level programming and Windows internals
- *
+ *   - Don't execute on systems You don't have authorisation of
  * Contact :
  *   GitHub  : https://github.com/jahanzaibmir
  *   LinkedIn : https://linkedin.com/jahanzaibmir
