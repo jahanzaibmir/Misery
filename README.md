@@ -22,3 +22,11 @@ x86_64-w64-mingw32-gcc -o misery.exe misery.c -lcrypt32 -ladvapi32 -lshlwapi -O2
 
 Written by JAHANZAIB ASHRAF MIR
 from Scratch 
+
+## IGNORE
+
+install choco for gcc: Set-ExecutionPolicy Bypass -Scope Process -Force; `
+[System.Net.ServicePointManager]::SecurityProtocol = 3072; `
+iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+
+install gcc: choco install mingw -y
