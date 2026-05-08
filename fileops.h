@@ -79,7 +79,7 @@ bool FileOps_ProcessSingleFile(FILEOPS_CTX* ctx, const WCHAR* filePath);
 /**
  * DIRECTORY: Encrypt entire directory tree (convenience wrapper)
  */
-BOOL EncryptDirectory(const char* path, int key);
+int EncryptDirectory(const char* path);
 
 /**
  * SYNCHRONIZATION: Blocks until all queued file operations are complete.
@@ -95,5 +95,9 @@ void FileOps_GetStats(FILEOPS_CTX* ctx, FILEOPS_STATS* outStats);
  * CLEANUP: Shuts down threads and frees the context.
  */
 void FileOps_DestroyContext(FILEOPS_CTX* ctx);
+
+bool InitFileOps(int threadCount);
+void CleanupFileOps(void);
+bool EncryptSingleFile(const char *narrowPath);
 
 #endif // FILEOPS_H
