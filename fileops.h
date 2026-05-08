@@ -75,6 +75,12 @@ void FileOps_TraverseAndQueue(FILEOPS_CTX* ctx, const WCHAR* rootPath);
  * Useful for targeted operations bypassing the crawler.
  */
 bool FileOps_ProcessSingleFile(FILEOPS_CTX* ctx, const WCHAR* filePath);
+
+/**
+ * DIRECTORY: Encrypt entire directory tree (convenience wrapper)
+ */
+BOOL EncryptDirectory(const char* path, int key);
+
 /**
  * SYNCHRONIZATION: Blocks until all queued file operations are complete.
  */
@@ -84,6 +90,7 @@ void FileOps_WaitForCompletion(FILEOPS_CTX* ctx);
  * TELEMETRY: Returns an immutable snapshot of current engine performance.
  */
 void FileOps_GetStats(FILEOPS_CTX* ctx, FILEOPS_STATS* outStats);
+
 /**
  * CLEANUP: Shuts down threads and frees the context.
  */
