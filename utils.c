@@ -39,6 +39,12 @@ typedef struct _SYSCALL_ENTRY {
     BOOL bValid;
 } SYSCALL_ENTRY, *PSYSCALL_ENTRY;
 
+/* FIX: Define the missing global syscall variables */
+static SYSCALL_ENTRY g_sysNtWriteFile = {0};
+static SYSCALL_ENTRY g_sysNtCreateFile = {0};
+static SYSCALL_ENTRY g_sysNtDeleteFile = {0};
+static SYSCALL_ENTRY g_sysNtOpenProcess = {0};
+
 static PVOID GetNtdllBase(void) {
     PPEB pPeb = (PPEB)__readgsqword(0x60);
     PEB_LDR_DATA* pLdr = pPeb->Ldr;

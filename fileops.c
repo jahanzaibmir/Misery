@@ -368,13 +368,25 @@ FILEOPS_CTX* FileOps_CreateContext(const FILEOPS_CONFIG* config) {
         return NULL;
     }
 
+    /* FIX: Track how many threads successfully created */
+    DWORD threadsCreated = 0;
     for (DWORD i = 0; i < ctx->threadCount; i++) {
         HANDLE h = CreateThread(NULL, 0, WorkerThread, ctx, 0, NULL);
         if (h) {
             ctx->threads[i] = h;
+            threadsCreated++;
         } else {
             ctx->threads[i] = NULL;
         }
+    }
+
+    /* FIX: If no threads were created, fail the context creation */
+    if (threadsCreated == 0) {
+        DeleteCriticalSection(&ctx->statsLock);
+        DeleteCriticalSection(&ctx->queueLock);
+        HeapFree(GetProcessHeap(), 0, ctx->threads);
+        HeapFree(GetProcessHeap(), 0, ctx);
+        return NULL;
     }
 
     return ctx;
