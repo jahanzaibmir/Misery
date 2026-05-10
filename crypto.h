@@ -1,11 +1,8 @@
-//crypto.h//
-
 #ifndef CRYPTO_H
 #define CRYPTO_H
 
 #include <windows.h>
 #include <stdbool.h>
-#include <stdint.h>
 #include <stddef.h>
 
 #define AES_KEY_SIZE_256 32
@@ -14,7 +11,7 @@
 #define HMAC_SHA256_SIZE 32
 #define ENCRYPT_OVERHEAD (SALT_SIZE + IV_SIZE + HMAC_SHA256_SIZE)
 #define AES_BLOCK_SIZE   16
-#define MAX_BUFFER_SIZE  (100u*1024u*1024u) // 100 MB
+#define MAX_BUFFER_SIZE  (100u*1024u*1024u)
 
 typedef enum {
     CRYPTO_SUCCESS = 0,
@@ -44,14 +41,17 @@ typedef struct {
     BYTE            salt[SALT_SIZE];
 } CRYPTO_CTX;
 
-CRYPTO_ERROR InitCrypto(const char *password, size_t passwordLen);
+CRYPTO_ERROR InitCrypto(const char *password, size_t passwordLen, BYTE *opt_salt);
 void         CleanupCrypto(void);
 CRYPTO_CTX  *GetCryptoCtx(void);
 const char  *GetErrorString(CRYPTO_ERROR err);
+
 CRYPTO_ERROR EncryptBuffer(CRYPTO_CTX *ctx, const BYTE *plaintext, DWORD plaintextLen,
                            BYTE *ciphertext, DWORD *ciphertextLen, DWORD capacity);
 
-// Buffer size recommendation
+CRYPTO_ERROR DecryptBuffer(CRYPTO_CTX *ctx, const BYTE *ciphertext, DWORD ciphertextLen,
+                           BYTE *plaintext, DWORD *plaintextLen, DWORD capacity);
+
 #define CRYPTO_REQUIRED_CAPACITY(plainLen) ((DWORD)(plainLen)+ENCRYPT_OVERHEAD+AES_BLOCK_SIZE)
 
 #endif
