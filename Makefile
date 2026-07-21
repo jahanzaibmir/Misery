@@ -1,15 +1,29 @@
-# Makefile - Misery v3 (Advanced Evasion Framework)
-# Cross-compiler: x86_64-w64-mingw32-gcc
-# Author: Jahanzaib Ashraf Mir
+# Makefile
+
+
+# Misery is an educational project to demonstrate how Ransomware behaves
+# Use in controlled environment, otherwise it may harm
+# This project is created strictly for educational and research purposes
+# Author & Contact: Jahanzaib Ashraf Mir
+# Github: @jahanzaibmir
+# Instagram: @jahanzaibmir
+# LinkedIn: @jahanzaibmir
+
+# DISCLAIMER & WARNING
+# This PROJECT is part of an academic research intended solely for
+# studying cyber threat behavior in controlled, isolated lab environments.
+# Unauthorized deployment on production systems or without explicit permission
+# is strictly prohibited and illegal under applicable cybercrime laws.
 
 CC      = x86_64-w64-mingw32-gcc
-CFLAGS  = -Os -s -Wall -fno-stack-protector -fvisibility=hidden -masm=intel
+CFLAGS  = -Os -s -Wall -Wextra-fno-stack-protector -fvisibility=hidden -masm=intel
 LIBS    = -ladvapi32 -luser32 -lshell32 -lshlwapi -lntdll -lws2_32 -liphlpapi -lole32 -luuid
 
 BUILD_DIR = build
 
 SRCS    = misery.c crypto.c fileops.c defense.c security.c persistence.c utils.c
 OBJS    = $(SRCS:.c=.o)
+HEADERS = misery.h crypto.h fileops.h defense.h security.h persistence.h utils.h
 
 TARGET  = $(BUILD_DIR)/misery.exe
 
@@ -19,18 +33,19 @@ $(TARGET): $(OBJS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
 	@echo ""
 	@echo "[+] Build successful: $(TARGET)"
+    @echo "[+] Size: $$(ls -lh $(TARGET) | awk '{print $$5}')"
 	@echo ""
 
-%.o: %.c
+%.o: %.c $(HEADERS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD_DIR):
-	@if not exist "$(BUILD_DIR)" mkdir "$(BUILD_DIR)"
+	 @mkdir -p "$(BUILD_DIR)"
 
 clean:
-	@echo Cleaning project...
-	-@del /f /q *.o 2>nul
-	-@if exist "$(BUILD_DIR)" rd /s /q "$(BUILD_DIR)" 2>nul
-	@echo Project cleaned.
+    @echo "Cleaning project..."
+	@rm -f *.o
+	@rm -rf "$(BUILD_DIR)"
+	@echo "Project cleaned."
 
 .PHONY: all clean
