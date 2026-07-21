@@ -15,9 +15,13 @@
 # Unauthorized deployment on production systems or without explicit permission
 # is strictly prohibited and illegal under applicable cybercrime laws.
 
+
+
+
+
 CC      = x86_64-w64-mingw32-gcc
-CFLAGS  = -Os -s -Wall -Wextra-fno-stack-protector -fvisibility=hidden -masm=intel
-LIBS    = -ladvapi32 -luser32 -lshell32 -lshlwapi -lntdll -lws2_32 -liphlpapi -lole32 -luuid
+CFLAGS  = -Os -s -Wall -Wextra -fno-stack-protector -fvisibility=hidden -masm=intel
+LIBS    = -ladvapi32 -luser32 -lshell32 -lshlwapi -lntdll -lws2_32 -liphlpapi -lole32 -luuid -lbcrypt
 
 BUILD_DIR = build
 
@@ -33,17 +37,17 @@ $(TARGET): $(OBJS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
 	@echo ""
 	@echo "[+] Build successful: $(TARGET)"
-    @echo "[+] Size: $$(ls -lh $(TARGET) | awk '{print $$5}')"
+	@echo "[+] Size: $$(ls -lh $(TARGET) | awk '{print $$5}')"
 	@echo ""
 
 %.o: %.c $(HEADERS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD_DIR):
-	 @mkdir -p "$(BUILD_DIR)"
+	@mkdir -p "$(BUILD_DIR)"
 
 clean:
-    @echo "Cleaning project..."
+	@echo "Cleaning project..."
 	@rm -f *.o
 	@rm -rf "$(BUILD_DIR)"
 	@echo "Project cleaned."
