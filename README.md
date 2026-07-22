@@ -17,6 +17,10 @@ cd Misery
 make 
 ```
 
+# Warning
+
+This project is for educational and authorized security research only. Do not use it on systems you do not own or have explicit permission to test. The author is not responsible for any misuse or damage resulting from the use of this project.
+
 # About Author
 
 Jahanzaib Ashraf Mir 
