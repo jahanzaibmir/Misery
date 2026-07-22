@@ -234,7 +234,7 @@ static LRESULT CALLBACK RansomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
         
         CreateWindowExW(0, L"STATIC",
             L"Cybersec Engineer  |  Hacker  |  Malware Researcher",
-            WS_CHILD | WS_VISIBLE, 20, 76, 500, 20, hCard, NULL, hInst, NULL);
+            WS_CHILD | WS_VISIBLE, 20, 63, 500, 20, hCard, NULL, hInst, NULL);
 
         
         /* ── Decryption Section ── */
