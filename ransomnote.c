@@ -228,6 +228,9 @@ static LRESULT CALLBACK RansomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
         CreateWindowExW(0, L"STATIC", NULL, WS_CHILD | WS_VISIBLE,
             0, 0, 5, 85, hCard, NULL, hInst, NULL);
 
+        CreateWindowExW(0, L"STATIC", L"About Author",
+            WS_CHILD | WS_VISIBLE, 20, 8, 300, 18, hCard, NULL, hInst, NULL);
+          
         CreateWindowExW(0, L"STATIC", L"Jahanzaib Ashraf Mir",
             WS_CHILD | WS_VISIBLE, 20, 28, 500, 32, hCard, NULL, hInst, NULL);
 
