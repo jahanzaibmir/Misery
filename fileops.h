@@ -47,6 +47,7 @@ typedef struct {
     DWORD threadCount;
     DWORD ioBufferSize;
     FILEOPS_FLAGS flags;
+    CRYPTO_CTX *crypto_ctx;  /* CRITICAL: Pass crypto context explicitly */
     // Callback for custom skip logic
     bool (*pfnShouldSkip)(const WCHAR* path); 
 } FILEOPS_CONFIG;
@@ -54,9 +55,9 @@ typedef struct {
 // Opaque context handle to prevent global state leaks
 typedef struct FILEOPS_CTX FILEOPS_CTX;
 
-/* ============================================================
- * HIGH-PERFORMANCE API
- * ============================================================ */
+/*
+ * HIGH-PERFORMANCE API {from scratch by Jahanzaib Ashraf Mir}
+ **/
 
 /**
  * LIFECYCLE: Initializes a heavy-duty processing context.
@@ -69,17 +70,6 @@ FILEOPS_CTX* FileOps_CreateContext(const FILEOPS_CONFIG* config);
  * Submits discovered files to the internal high-speed work queue.
  */
 void FileOps_TraverseAndQueue(FILEOPS_CTX* ctx, const WCHAR* rootPath);
-
-/**
- * INDIVIDUAL: Direct encryption of a single target.
- * Useful for targeted operations bypassing the crawler.
- */
-bool FileOps_ProcessSingleFile(FILEOPS_CTX* ctx, const WCHAR* filePath);
-
-/**
- * DIRECTORY: Encrypt entire directory tree (convenience wrapper)
- */
-int EncryptDirectory(const char* path);
 
 /**
  * SYNCHRONIZATION: Blocks until all queued file operations are complete.
@@ -96,8 +86,6 @@ void FileOps_GetStats(FILEOPS_CTX* ctx, FILEOPS_STATS* outStats);
  */
 void FileOps_DestroyContext(FILEOPS_CTX* ctx);
 
-bool InitFileOps(int threadCount);
-void CleanupFileOps(void);
-bool EncryptSingleFile(const char *narrowPath);
+bool FileOps_DefaultShouldSkip(const WCHAR* path);
 
 #endif // FILEOPS_H

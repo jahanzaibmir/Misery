@@ -17,8 +17,4 @@ bool SecurityDisableFirewall(void);
 /* Service Management */
 bool SecurityManageService(const char *svcName, bool stop_and_delete);
 
-/* Reporting */
-int SecurityGetLastError(void);
-DWORD SecurityGetServicesKilled(void);
-
 #endif

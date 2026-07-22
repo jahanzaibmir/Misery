@@ -117,13 +117,27 @@ CRYPTO_ERROR EncryptBuffer(CRYPTO_CTX *ctx, const BYTE *plain, DWORD plen,
         CryptDestroyKey(hDupKey); UnlockContext(); return CRYPTO_ERR_ENCRYPT;
     }
     CryptDestroyKey(hDupKey);
+
     BYTE hmacval[HMAC_SHA256_SIZE]; DWORD hvlen = HMAC_SHA256_SIZE;
+
     HCRYPTHASH hh=0;
+
     HMAC_INFO hminfo={0};
+
     if (!CryptCreateHash(ctx->hProv, CALG_HMAC, ctx->hHmacKey, 0, &hh)) { UnlockContext(); return CRYPTO_ERR_HMAC_COMPUTE; }
+
+
     hminfo.HashAlgid = CALG_SHA_256;
+
     CryptSetHashParam(hh, HP_HMAC_INFO, (BYTE*)&hminfo, 0);
-    CryptHashData(hh, cipher, SALT_SIZE+IV_SIZE+ctextlen, 0);
+ 
+    // Hash the HMAC slot as zeros first, then ciphertext:
+
+    BYTE hmac_zeros[HMAC_SHA256_SIZE] ={0};
+    CryptHashData(hh, cipher, SALT_SIZE + IV_SIZE, 0);
+    CryptHashData(hh, hmac_zeros, HMAC_SHA256_SIZE, 0); 
+    CryptHashData(hh, dst, ctextlen, 0); 
+
     if (!CryptGetHashParam(hh, HP_HASHVAL, hmacval, &hvlen, 0)) { CryptDestroyHash(hh); UnlockContext(); return CRYPTO_ERR_HMAC_COMPUTE; }
     CryptDestroyHash(hh);
     memcpy(cipher + SALT_SIZE + IV_SIZE, hmacval, HMAC_SHA256_SIZE);
@@ -145,10 +159,16 @@ CRYPTO_ERROR DecryptBuffer(CRYPTO_CTX *ctx, const BYTE *cipher, DWORD clen,
     BYTE hmacval[HMAC_SHA256_SIZE]; DWORD hvlen = HMAC_SHA256_SIZE;
     HCRYPTHASH hh=0;
     HMAC_INFO hminfo={0};
+
     if (!CryptCreateHash(ctx->hProv, CALG_HMAC, ctx->hHmacKey, 0, &hh)) { UnlockContext(); return CRYPTO_ERR_HMAC_COMPUTE; }
     hminfo.HashAlgid = CALG_SHA_256;
     CryptSetHashParam(hh, HP_HMAC_INFO, (BYTE*)&hminfo, 0);
-    CryptHashData(hh, cipher, clen - ctextlen, 0);
+
+    CryptHashData(hh, cipher, SALT_SIZE + IV_SIZE, 0);
+    BYTE hmac_zeros[HMAC_SHA256_SIZE] = {0};
+    CryptHashData(hh, hmac_zeros, HMAC_SHA256_SIZE, 0); 
+    CryptHashData(hh, ctext, ctextlen, 0);  
+
     if (!CryptGetHashParam(hh, HP_HASHVAL, hmacval, &hvlen, 0)) { CryptDestroyHash(hh); UnlockContext(); return CRYPTO_ERR_HMAC_COMPUTE; }
     if (memcmp(hmacval, hmac, HMAC_SHA256_SIZE) != 0) { CryptDestroyHash(hh); UnlockContext(); return CRYPTO_ERR_MAC_MISMATCH; }
     CryptDestroyHash(hh);

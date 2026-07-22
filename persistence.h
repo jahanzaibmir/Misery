@@ -18,7 +18,5 @@ bool PersistenceInstallStartupFolder(void);
 /* Master function - calls all persistence methods */
 bool PersistenceInstallAll(void);
 
-/* Status and cleanup */
-int PersistenceGetLastError(void);
 
 #endif /* PERSISTENCE_H*/

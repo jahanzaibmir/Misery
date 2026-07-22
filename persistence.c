@@ -165,7 +165,3 @@ bool PersistenceInstallAll(void) {
     
     return success;
 }
-
-int PersistenceGetLastError(void) {
-    return g_persistence_last_error;
-}
