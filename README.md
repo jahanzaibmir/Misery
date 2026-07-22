@@ -3,7 +3,7 @@ Misery is a modular Windows-based research project designed to simulate a highsp
 
 ## Demonstration
 
-![Misery Ransomware Demonstration](assets/demonstration.gif)
+![Ransomware Demonstration](/assets/demonstration.gif)
 
 ## Requirements
 
