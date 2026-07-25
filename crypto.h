@@ -45,12 +45,12 @@ typedef struct {
     BYTE            salt[SALT_SIZE];
 } CRYPTO_CTX;
 
-/* --- Initialization --- */
+/*Initialization */
 
-/* Password-based: hashes password to derive key (legacy, not used by main flow) */
+/* Password based: hashes password to derive key  */
 CRYPTO_ERROR InitCrypto(const char *password, size_t passwordLen, BYTE *opt_salt);
 
-/* Raw 256-bit key: uses domain-separated KDF for AES + HMAC keys (recommended) */
+/* Raw 256-bit key: uses domain-separated KDF for AES + HMAC keys  */
 CRYPTO_ERROR InitCryptoRaw(const BYTE *rawKey, DWORD keyLen, const BYTE *salt);
 
 void         CleanupCrypto(void);
@@ -61,7 +61,7 @@ CRYPTO_ERROR EncryptBuffer(CRYPTO_CTX *ctx, const BYTE *plaintext, DWORD plainte
                            BYTE *ciphertext, DWORD *ciphertextLen, DWORD capacity);
 
 CRYPTO_ERROR DecryptBuffer(CRYPTO_CTX *ctx, const BYTE *ciphertext, DWORD ciphertextLen,
-                           BYTE *plaintext, DWORD *plaintextLen, DWORD capacity);
+                           BYTE *plaintext, DWORD *plaintextLen);
 
 #define CRYPTO_REQUIRED_CAPACITY(plainLen) ((DWORD)(plainLen)+ENCRYPT_OVERHEAD+AES_BLOCK_SIZE)
 
