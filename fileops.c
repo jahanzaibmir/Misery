@@ -250,7 +250,7 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
             DWORD decLen = 0;
             CRYPTO_ERROR cerr = DecryptBuffer(ctx->config.crypto_ctx,
                                               buf, fs,
-                                              plaintext, &decLen, maxPlainCap);
+                                              plaintext, &decLen);
             if (cerr != CRYPTO_SUCCESS) {
                 MiseryLog(MISERY_LOG_WARN,
                           "FileOps: DecryptBuffer failed for %s: %s (code=%d)",
