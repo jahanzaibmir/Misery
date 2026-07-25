@@ -203,7 +203,7 @@ CRYPTO_ERROR InitCrypto(const char *password, size_t passwordLen, BYTE *opt_salt
 }
 
 /*
- * FIX: New raw-key initialisation — uses derive_keys() directly.
+ * FIX: New raw-key initialisation – uses derive_keys() directly.
  *   - salt == NULL → generates a random salt
  *   - salt != NULL → uses the provided salt (for decryption)
  */
@@ -250,7 +250,7 @@ void CleanupCrypto(void) {
 }
 
 /* ===================================================================
- * EncryptBuffer and DecryptBuffer are unchanged from the original —
+ * EncryptBuffer and DecryptBuffer are unchanged from the original –
  * they use the context's hKey (AES-256-CBC) and hHmacKey (HMAC-SHA256).
  * The HMAC covers [salt || iv || zeroed-MAC-slot || ciphertext].
  * =================================================================== */
@@ -324,7 +324,7 @@ CRYPTO_ERROR EncryptBuffer(CRYPTO_CTX *ctx, const BYTE *plain, DWORD plen,
 }
 
 CRYPTO_ERROR DecryptBuffer(CRYPTO_CTX *ctx, const BYTE *cipher, DWORD clen,
-                           BYTE *plain, DWORD *plen, DWORD cap) {
+                           BYTE *plain, DWORD *plen) {
     if (!ctx || !plain || !plen || !cipher ||
         clen < (SALT_SIZE + IV_SIZE + HMAC_SHA256_SIZE + AES_BLOCK_SIZE))
         return CRYPTO_ERR_INVALID_PARAM;
