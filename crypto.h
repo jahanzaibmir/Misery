@@ -45,10 +45,9 @@ typedef struct {
     BYTE            salt[SALT_SIZE];
 } CRYPTO_CTX;
 
-/*Initialization */
 
-/* Password based: hashes password to derive key  */
-CRYPTO_ERROR InitCrypto(const char *password, size_t passwordLen, BYTE *opt_salt);
+
+CRYPTO_ERROR InitCrypto(const char *password, size_t passwordLen, BYTE *opt_salt); //hashes password to derive key
 
 /* Raw 256-bit key: uses domain-separated KDF for AES + HMAC keys  */
 CRYPTO_ERROR InitCryptoRaw(const BYTE *rawKey, DWORD keyLen, const BYTE *salt);
