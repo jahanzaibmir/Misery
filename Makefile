@@ -38,16 +38,16 @@ all: $(TARGET)
 
 $(TARGET): $(ALL_OBJS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -o $@ $(ALL_OBJS) $(LIBS)
-	@echo ""
-	@echo "[+] Build successful: $(TARGET)"
-	@echo "[+] Size: $$(ls -lh $(TARGET) | awk '{print $$5}')"
-	@echo ""
+	@echo.
+	@echo [+] Build successful: $(TARGET)
+	@for %%I in ($(TARGET)) do @set /a _sz=%%~zI/1024 & call echo [+] Size: %%_sz%% KB
+	@echo.
 
 %.o: %.c $(ALL_HEADERS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD_DIR):
-	@mkdir -p "$(BUILD_DIR)"
+	@mkdir "$(BUILD_DIR)"
 
 clean:
 	@echo Cleaning project...
