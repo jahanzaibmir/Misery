@@ -50,14 +50,11 @@ CRYPTO_CTX *GetCryptoCtx(void) { return &g_ctx; }
 CRYPTO_ERROR LockContext(void) {
     if (!g_initialized) return CRYPTO_ERR_NOT_INITIALIZED;
     EnterCriticalSection(&g_ctx.csLock);
-    g_ctx.locked = true;
     return CRYPTO_SUCCESS;
 }
 
 CRYPTO_ERROR UnlockContext(void) {
     if (!g_initialized) return CRYPTO_ERR_NOT_INITIALIZED;
-    if (!g_ctx.locked) return CRYPTO_ERR_CRYPTO_INIT;
-    g_ctx.locked = false;
     LeaveCriticalSection(&g_ctx.csLock);
     return CRYPTO_SUCCESS;
 }
