@@ -126,7 +126,6 @@ static void     UpdateTimerDisplay(HWND hWnd);
 static void     UpdateAttemptsDisplay(HWND hWnd);
 static void     DestroyKeyAndClose(HWND hWnd);
 static int      NormalizeKeyInput(const char *raw, char *outKey, size_t outSize);
-static void     Edit_OnEnter(HWND hEdit, HWND hWnd);
 
 void ShowRansomNoteWindow(void);
 
