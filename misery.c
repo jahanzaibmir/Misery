@@ -535,8 +535,8 @@ int main(int argc, char **argv) {
             return 1;
         }
 
-        char saltHex[33] = {0};
-        char keyHex[65]  = {0};
+        char saltHex[35] = {0};   /* 32 hex + possible \r\n + null */
+        char keyHex[67]  = {0};   /* 64 hex + possible \r\n + null */
         if (!fgets(saltHex, sizeof(saltHex), kf)) {
             MiseryLog(MISERY_LOG_ERROR, "Failed to read salt from %s", keyfilePath);
             fclose(kf); MiseryCleanupContext(); return 1;
