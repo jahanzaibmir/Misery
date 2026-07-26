@@ -1,9 +1,12 @@
 #ifndef RANSOMNOTE_H
 #define RANSOMNOTE_H
 
-#include <windows.h>
-
-/* Display the ransom note window (blocking — runs its own message loop) */
-void ShowRansomNoteWindow(void);
+/* 
+ * ransomnote.h — public interface
+ * 
+ * The entire GUI implementation has been refactored into the gui/ subfolder.
+ * This header simply re-exports the entry point.
+ */
+#include "gui/gui_main.h"
 
 #endif /* RANSOMNOTE_H */
