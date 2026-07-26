@@ -59,16 +59,7 @@ CRYPTO_ERROR UnlockContext(void) {
     return CRYPTO_SUCCESS;
 }
 
-/*
- * FIX: Domain-separated key derivation.
- *   AES key  = SHA-256("misery-aes-key" || inputKey || salt)
- *   HMAC key = SHA-256("misery-hmac-key" || inputKey || salt)
- *
- * This ensures:
- *   - AES and HMAC keys are cryptographically independent
- *   - Knowledge of one does not reveal the other
- *   - Full 256-bit entropy from inputKey is preserved
- */
+
 static CRYPTO_ERROR derive_keys(HCRYPTPROV hProv,
                                 const BYTE *inputKey, DWORD inputLen,
                                 const BYTE *salt,
@@ -83,7 +74,7 @@ static CRYPTO_ERROR derive_keys(HCRYPTPROV hProv,
     const char aesCtx[]  = "misery-aes-key";
     const char hmacCtx[] = "misery-hmac-key";
 
-    /* --- Derive AES-256 key --- */
+    /* Derive AES-256 key */
     if (!CryptCreateHash(hProv, CALG_SHA_256, 0, 0, &hHash)) {
         err = CRYPTO_ERR_KEY_GEN; goto cleanup;
     }
@@ -96,7 +87,7 @@ static CRYPTO_ERROR derive_keys(HCRYPTPROV hProv,
     }
     CryptDestroyHash(hHash); hHash = 0;
 
-    /* --- Derive HMAC-SHA256 key (separate hash chain) --- */
+    /* Derive HMAC-SHA256 key (separate hash chain) */
     klen = AES_KEY_SIZE_256;
     if (!CryptCreateHash(hProv, CALG_SHA_256, 0, 0, &hHash)) {
         err = CRYPTO_ERR_KEY_GEN; goto cleanup;
@@ -110,7 +101,7 @@ static CRYPTO_ERROR derive_keys(HCRYPTPROV hProv,
     }
     CryptDestroyHash(hHash); hHash = 0;
 
-    /* --- Import AES key into CryptoAPI --- */
+    /* Import AES key into CryptoAPI */
     struct {
         PUBLICKEYSTRUC hdr;
         DWORD          keylen;
@@ -127,7 +118,7 @@ static CRYPTO_ERROR derive_keys(HCRYPTPROV hProv,
         err = CRYPTO_ERR_KEY_GEN; goto cleanup;
     }
 
-    /* --- Import HMAC key --- */
+    /* Import HMAC key */
     memcpy(blob.key, hmacKey, AES_KEY_SIZE_256);
     if (!CryptImportKey(hProv, (BYTE*)&blob, sizeof(blob), 0, 0, hMacKey)) {
         CryptDestroyKey(*hKey); *hKey = 0;
@@ -142,10 +133,6 @@ cleanup:
     return err;
 }
 
-/*
- * Password-based initialisation (legacy wrapper).
- * Hashes password to a 32-byte key, then calls derive_keys().
- */
 CRYPTO_ERROR InitCrypto(const char *password, size_t passwordLen, BYTE *opt_salt) {
     if (!password || passwordLen == 0) return CRYPTO_ERR_INVALID_PARAM;
     if (g_initialized && g_ctx.hKey && g_ctx.hProv) return CRYPTO_SUCCESS;
@@ -200,9 +187,8 @@ CRYPTO_ERROR InitCrypto(const char *password, size_t passwordLen, BYTE *opt_salt
 }
 
 /*
- * FIX: New raw-key initialisation – uses derive_keys() directly.
- *   - salt == NULL → generates a random salt
- *   - salt != NULL → uses the provided salt (for decryption)
+  uses derive_keys() directly.
+
  */
 CRYPTO_ERROR InitCryptoRaw(const BYTE *rawKey, DWORD keyLen, const BYTE *salt) {
     if (!rawKey || keyLen == 0) return CRYPTO_ERR_INVALID_PARAM;
@@ -246,11 +232,7 @@ void CleanupCrypto(void) {
     g_initialized = false;
 }
 
-/* ===================================================================
- * EncryptBuffer and DecryptBuffer are unchanged from the original –
- * they use the context's hKey (AES-256-CBC) and hHmacKey (HMAC-SHA256).
- * The HMAC covers [salt || iv || zeroed-MAC-slot || ciphertext].
- * =================================================================== */
+
 
 CRYPTO_ERROR EncryptBuffer(CRYPTO_CTX *ctx, const BYTE *plain, DWORD plen,
                            BYTE *cipher, DWORD *clen, DWORD cap) {
@@ -292,7 +274,7 @@ CRYPTO_ERROR EncryptBuffer(CRYPTO_CTX *ctx, const BYTE *plain, DWORD plen,
     }
     CryptDestroyKey(hDupKey);
 
-    /* Compute HMAC over [salt || iv || 32 zero-bytes || ciphertext] */
+    /* */
     BYTE hmacval[HMAC_SHA256_SIZE];
     DWORD hvlen = HMAC_SHA256_SIZE;
     HCRYPTHASH hh = 0;
