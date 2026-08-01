@@ -1,3 +1,5 @@
+.RECIPEPREFIX = >
+
 # Makefile
 #
 # Misery is an educational project to demonstrate how Ransomware behaves
@@ -21,13 +23,15 @@ SHELL   = cmd.exe
 BUILD_DIR = build
 
 # Root source files (in project root)
-SRCS_ROOT   = misery.c misery_config.c crypto.c fileops.c defense.c security.c persistence.c utils.c
+SRCS_ROOT   = misery.c misery_config.c crypto.c defense.c security.c persistence.c utils.c
+
+SRCS_FOPS   = fops/api.c fops/queue.c fops/worker.c fops/traverse.c fops/fileio.c fops/config.c
 
 # GUI source files (in gui/ subfolder)
 SRCS_GUI    = gui/gui_main.c gui/gui_resources.c gui/gui_window.c gui/gui_decrypt.c gui/gui_controls.c gui/gui_utils.c
 
 # All source files
-ALL_SRCS    = $(SRCS_ROOT) $(SRCS_GUI)
+ALL_SRCS    = $(SRCS_ROOT) $(SRCS_FOPS) $(SRCS_GUI)
 ALL_OBJS    = $(ALL_SRCS:.c=.o)
 ALL_HEADERS = misery_config.h crypto.h fileops.h defense.h security.h persistence.h utils.h ransomnote.h \
               gui/gui_types.h gui/gui_resources.h gui/gui_window.h gui/gui_decrypt.h gui/gui_controls.h gui/gui_utils.h gui/gui_main.h
@@ -36,24 +40,25 @@ TARGET      = $(BUILD_DIR)/misery.exe
 
 all: $(TARGET)
 
-$(TARGET): $(ALL_OBJS) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -o $@ $(ALL_OBJS) $(LIBS)
-	@echo.
-	@echo [+] Build successful: $(TARGET)
-	@for %%I in ($(TARGET)) do @set /a _sz=%%~zI/1024 & call echo [+] Size: %%_sz%% KB
-	@echo.
+ $(TARGET): $(ALL_OBJS) | $(BUILD_DIR)
+> $(CC) $(CFLAGS) -o $@ $(ALL_OBJS) $(LIBS)
+> @echo.
+> @echo [+] Build successful: $(TARGET)
+> @for %%I in ($(TARGET)) do @set /a _sz=%%~zI/1024 & call echo [+] Size: %%_sz%% KB
+> @echo.
 
 %.o: %.c $(ALL_HEADERS)
-	$(CC) $(CFLAGS) -c $< -o $@
+> $(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD_DIR):
-	@mkdir "$(BUILD_DIR)"
+ $(BUILD_DIR):
+> @mkdir "$(BUILD_DIR)"
 
 clean:
-	@echo Cleaning project...
-	@-del /f /q *.o 2>nul
-	@-del /f /q gui\*.o 2>nul
-	@-rmdir /s /q "$(BUILD_DIR)" 2>nul
-	@echo Project cleaned.
+> @echo Cleaning project...
+> @if exist *.o del /f /q *.o
+> @if exist fops\*.o del /f /q fops\*.o
+> @if exist gui\*.o del /f /q gui\*.o
+> @if exist "$(BUILD_DIR)" rmdir /s /q "$(BUILD_DIR)"
+> @echo Project cleaned.
 
 .PHONY: all clean
