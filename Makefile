@@ -5,8 +5,7 @@
 # Misery is an educational project to demonstrate how Ransomware behaves
 # Use in controlled environment, otherwise it may harm
 # This project is created strictly for educational and research purposes
-# Author & Contact
-# Jahanzaib Ashraf Mir
+# Author & Contact: Jahanzaib Ashraf Mir
 # Github: @jahanzaibmir
 # Instagram: @jahanzaibmir
 # LinkedIn: @jahanzaibmir
@@ -23,11 +22,19 @@ LIBS    = -ladvapi32 -luser32 -lshell32 -lshlwapi -lntdll -lws2_32 -liphlpapi -l
 SHELL   = cmd.exe
 BUILD_DIR = build
 
+# Root source files (in project root)
 SRCS_ROOT   = misery.c misery_config.c defense.c security.c persistence.c utils.c
+
+# NCrypt Crypto Engine module
 SRCS_NCRYPT = ncrypt/context.c ncrypt/kdf.c ncrypt/cipher.c ncrypt/utils.c
+
+# File Operations module
 SRCS_FOPS   = fops/api.c fops/queue.c fops/worker.c fops/traverse.c fops/fileio.c fops/config.c
+
+# GUI source files (in gui/ subfolder)
 SRCS_GUI    = gui/gui_main.c gui/gui_resources.c gui/gui_window.c gui/gui_decrypt.c gui/gui_controls.c gui/gui_utils.c
 
+# All source files
 ALL_SRCS    = $(SRCS_ROOT) $(SRCS_NCRYPT) $(SRCS_FOPS) $(SRCS_GUI)
 ALL_OBJS    = $(ALL_SRCS:.c=.o)
 ALL_HEADERS = misery_config.h crypto.h fileops.h defense.h security.h persistence.h utils.h ransomnote.h \
@@ -40,11 +47,7 @@ all: $(TARGET)
  $(TARGET): $(ALL_OBJS) | $(BUILD_DIR)
 > $(CC) $(CFLAGS) -o $@ $(ALL_OBJS) $(LIBS)
 > @echo.
-<<<<<<< Updated upstream
-> @echo [+]  Ransomware Compiled: $(TARGET)
-=======
 > @echo Build successful: $(TARGET)
->>>>>>> Stashed changes
 > @for %%I in ($(TARGET)) do @set /a _sz=%%~zI/1024 & call echo [+] Size: %%_sz%% KB
 > @echo.
 
