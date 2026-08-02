@@ -56,6 +56,10 @@ void         CleanupCrypto(void);
 CRYPTO_CTX  *GetCryptoCtx(void);
 const char  *GetErrorString(CRYPTO_ERROR err);
 
+/* Threading primitives for the crypto context */
+CRYPTO_ERROR LockContext(void);
+CRYPTO_ERROR UnlockContext(void);
+
 CRYPTO_ERROR EncryptBuffer(CRYPTO_CTX *ctx, const BYTE *plaintext, DWORD plaintextLen,
                            BYTE *ciphertext, DWORD *ciphertextLen, DWORD capacity);
 
