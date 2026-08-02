@@ -4,6 +4,15 @@
 #include "ncrypt_internal.h"
 #include <string.h>
 
+// FIX: Constant-time comparison to prevent HMAC timing side-channel attacks
+static int NcryptSafeCompare(const BYTE *a, const BYTE *b, size_t len) {
+    int result = 0;
+    for (size_t i = 0; i < len; i++) {
+        result |= a[i] ^ b[i];
+    }
+    return result; // Returns 0 if identical, non-zero if different
+}
+
 CRYPTO_ERROR EncryptBuffer(CRYPTO_CTX *ctx, const BYTE *plain, DWORD plen,
                            BYTE *cipher, DWORD *clen, DWORD cap) {
     if (!ctx || !plain || !cipher || !clen) return CRYPTO_ERR_INVALID_PARAM;
@@ -25,6 +34,10 @@ CRYPTO_ERROR EncryptBuffer(CRYPTO_CTX *ctx, const BYTE *plain, DWORD plen,
 
     memcpy(cipher, ctx->salt, SALT_SIZE);
     memcpy(cipher + SALT_SIZE, iv, IV_SIZE);
+
+    // FIX: EXPLICITLY zero the HMAC slot. The legacy HMAC calculation hashes this exact 
+    // 32-byte space as zeros. Relying on the caller to provide zeroed memory was a critical fragility.
+    SecureZeroMemory(cipher + SALT_SIZE + IV_SIZE, HMAC_SHA256_SIZE);
 
     HCRYPTKEY hDupKey = 0;
     if (!CryptDuplicateKey(ctx->hKey, NULL, 0, &hDupKey)) {
@@ -56,7 +69,7 @@ CRYPTO_ERROR EncryptBuffer(CRYPTO_CTX *ctx, const BYTE *plain, DWORD plen,
     hminfo.HashAlgid = CALG_SHA_256;
     CryptSetHashParam(hh, HP_HMAC_INFO, (BYTE*)&hminfo, 0);
 
-    /* Legacy 32-byte zero padding domain separator (Preserved for backward compatibility) */
+    /* Legacy 32-byte zero padding domain separator (Preserved for strict backward compatibility) */
     BYTE hmac_zeros[HMAC_SHA256_SIZE] = {0};
     CryptHashData(hh, cipher, SALT_SIZE + IV_SIZE, 0);
     CryptHashData(hh, hmac_zeros, HMAC_SHA256_SIZE, 0);
@@ -113,7 +126,8 @@ CRYPTO_ERROR DecryptBuffer(CRYPTO_CTX *ctx, const BYTE *cipher, DWORD clen,
     }
     CryptDestroyHash(hh);
 
-    if (memcmp(hmacval, hmac, HMAC_SHA256_SIZE) != 0) {
+    // FIX: Replaced memcmp with constant-time NcryptSafeCompare to prevent timing side-channels
+    if (NcryptSafeCompare(hmacval, hmac, HMAC_SHA256_SIZE) != 0) {
         UnlockContext(); return CRYPTO_ERR_MAC_MISMATCH;
     }
 
