@@ -39,7 +39,7 @@ all: $(TARGET)
  $(TARGET): $(ALL_OBJS) | $(BUILD_DIR)
 > $(CC) $(CFLAGS) -o $@ $(ALL_OBJS) $(LIBS)
 > @echo.
-> @echo [+] Build successful: $(TARGET)
+> @echo [+]  Ransomware Compiled: $(TARGET)
 > @for %%I in ($(TARGET)) do @set /a _sz=%%~zI/1024 & call echo [+] Size: %%_sz%% KB
 > @echo.
 
@@ -50,11 +50,11 @@ all: $(TARGET)
 > @mkdir "$(BUILD_DIR)"
 
 clean:
-> @echo Cleaning project...
+> @echo Cleaning Ransomware...
 > @if exist *.o del /f /q *.o
 > @if exist fops\*.o del /f /q fops\*.o
 > @if exist gui\*.o del /f /q gui\*.o
 > @if exist "$(BUILD_DIR)" rmdir /s /q "$(BUILD_DIR)"
-> @echo Project cleaned.
+> @echo Ransomware cleaned.
 
 .PHONY: all clean
