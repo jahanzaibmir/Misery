@@ -23,11 +23,12 @@ LIBS    = -ladvapi32 -luser32 -lshell32 -lshlwapi -lntdll -lws2_32 -liphlpapi -l
 SHELL   = cmd.exe
 BUILD_DIR = build
 
-SRCS_ROOT   = misery.c misery_config.c crypto.c defense.c security.c persistence.c utils.c
+SRCS_ROOT   = misery.c misery_config.c defense.c security.c persistence.c utils.c
+SRCS_NCRYPT = ncrypt/context.c ncrypt/kdf.c ncrypt/cipher.c ncrypt/utils.c
 SRCS_FOPS   = fops/api.c fops/queue.c fops/worker.c fops/traverse.c fops/fileio.c fops/config.c
 SRCS_GUI    = gui/gui_main.c gui/gui_resources.c gui/gui_window.c gui/gui_decrypt.c gui/gui_controls.c gui/gui_utils.c
 
-ALL_SRCS    = $(SRCS_ROOT) $(SRCS_FOPS) $(SRCS_GUI)
+ALL_SRCS    = $(SRCS_ROOT) $(SRCS_NCRYPT) $(SRCS_FOPS) $(SRCS_GUI)
 ALL_OBJS    = $(ALL_SRCS:.c=.o)
 ALL_HEADERS = misery_config.h crypto.h fileops.h defense.h security.h persistence.h utils.h ransomnote.h \
               gui/gui_types.h gui/gui_resources.h gui/gui_window.h gui/gui_decrypt.h gui/gui_controls.h gui/gui_utils.h gui/gui_main.h
@@ -39,7 +40,11 @@ all: $(TARGET)
  $(TARGET): $(ALL_OBJS) | $(BUILD_DIR)
 > $(CC) $(CFLAGS) -o $@ $(ALL_OBJS) $(LIBS)
 > @echo.
+<<<<<<< Updated upstream
 > @echo [+]  Ransomware Compiled: $(TARGET)
+=======
+> @echo Build successful: $(TARGET)
+>>>>>>> Stashed changes
 > @for %%I in ($(TARGET)) do @set /a _sz=%%~zI/1024 & call echo [+] Size: %%_sz%% KB
 > @echo.
 
@@ -52,6 +57,7 @@ all: $(TARGET)
 clean:
 > @echo Cleaning Ransomware...
 > @if exist *.o del /f /q *.o
+> @if exist ncrypt\*.o del /f /q ncrypt\*.o
 > @if exist fops\*.o del /f /q fops\*.o
 > @if exist gui\*.o del /f /q gui\*.o
 > @if exist "$(BUILD_DIR)" rmdir /s /q "$(BUILD_DIR)"
