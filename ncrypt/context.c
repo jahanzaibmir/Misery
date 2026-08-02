@@ -54,8 +54,15 @@ CRYPTO_ERROR InitCrypto(const char *password, size_t passwordLen, BYTE *opt_salt
         CryptReleaseContext(g_nctx.hProv, 0); g_nctx.hProv = 0;
         return CRYPTO_ERR_KEY_GEN;
     }
-    CryptHashData(hHash, (BYTE*)password, (DWORD)passwordLen, 0);
-    CryptHashData(hHash, g_nctx.salt, SALT_SIZE, 0);
+    
+    // FIX: Check CryptHashData returns
+    if (!CryptHashData(hHash, (BYTE*)password, (DWORD)passwordLen, 0) ||
+        !CryptHashData(hHash, g_nctx.salt, SALT_SIZE, 0)) {
+        CryptDestroyHash(hHash);
+        CryptReleaseContext(g_nctx.hProv, 0); g_nctx.hProv = 0;
+        return CRYPTO_ERR_KEY_GEN;
+    }
+
     if (!CryptGetHashParam(hHash, HP_HASHVAL, pwKey, &klen, 0)) {
         CryptDestroyHash(hHash);
         CryptReleaseContext(g_nctx.hProv, 0); g_nctx.hProv = 0;
