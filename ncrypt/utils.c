@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// utils.c - Cryptographic utility functions (Hex parsing, errors)
 
 #include "../crypto.h"
 #include <string.h>
@@ -34,7 +36,8 @@ int hex_to_bytes(const char *hex, size_t hexLen, unsigned char *out, size_t outL
 }
 
 const char *GetErrorString(CRYPTO_ERROR error) {
-    static const char *err[] = {
+    // FIX: Thread-Local Storage prevents race conditions when multiple threads log errors simultaneously
+    __declspec(thread) static const char *err[] = {
         "Success","Invalid parameter","Memory alloc fail","Crypto init fail",
         "Key gen fail","Encryption fail","Decryption fail","MAC verify fail",
         "IV generation fail","Buffer size invalid","Not initialized",
