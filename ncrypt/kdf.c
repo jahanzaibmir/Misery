@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// kdf.c - Custom Key Derivation Logic for AES-256 and HMAC-SHA256
 
 #include "ncrypt_internal.h"
 #include <string.h>
@@ -22,9 +24,13 @@ CRYPTO_ERROR NcryptDeriveKeys(HCRYPTPROV hProv,
     if (!CryptCreateHash(hProv, CALG_SHA_256, 0, 0, &hHash)) {
         err = CRYPTO_ERR_KEY_GEN; goto cleanup;
     }
-    CryptHashData(hHash, (BYTE*)aesCtx, (DWORD)strlen(aesCtx), 0);
-    CryptHashData(hHash, inputKey, inputLen, 0);
-    CryptHashData(hHash, salt, SALT_SIZE, 0);
+    // FIX: Check all CryptHashData return values to prevent silent key corruption
+    if (!CryptHashData(hHash, (BYTE*)aesCtx, (DWORD)strlen(aesCtx), 0) ||
+        !CryptHashData(hHash, inputKey, inputLen, 0) ||
+        !CryptHashData(hHash, salt, SALT_SIZE, 0)) {
+        CryptDestroyHash(hHash); hHash = 0;
+        err = CRYPTO_ERR_KEY_GEN; goto cleanup;
+    }
     if (!CryptGetHashParam(hHash, HP_HASHVAL, aesKey, &klen, 0)) {
         CryptDestroyHash(hHash); hHash = 0;
         err = CRYPTO_ERR_KEY_GEN; goto cleanup;
@@ -36,9 +42,12 @@ CRYPTO_ERROR NcryptDeriveKeys(HCRYPTPROV hProv,
     if (!CryptCreateHash(hProv, CALG_SHA_256, 0, 0, &hHash)) {
         err = CRYPTO_ERR_KEY_GEN; goto cleanup;
     }
-    CryptHashData(hHash, (BYTE*)hmacCtx, (DWORD)strlen(hmacCtx), 0);
-    CryptHashData(hHash, inputKey, inputLen, 0);
-    CryptHashData(hHash, salt, SALT_SIZE, 0);
+    if (!CryptHashData(hHash, (BYTE*)hmacCtx, (DWORD)strlen(hmacCtx), 0) ||
+        !CryptHashData(hHash, inputKey, inputLen, 0) ||
+        !CryptHashData(hHash, salt, SALT_SIZE, 0)) {
+        CryptDestroyHash(hHash); hHash = 0;
+        err = CRYPTO_ERR_KEY_GEN; goto cleanup;
+    }
     if (!CryptGetHashParam(hHash, HP_HASHVAL, hmacKey, &klen, 0)) {
         CryptDestroyHash(hHash); hHash = 0;
         err = CRYPTO_ERR_KEY_GEN; goto cleanup;
