@@ -8,9 +8,9 @@
 #include <shlobj.h>
 #include <ctype.h>
 
-/* ------------------------------------------------------------------ */
+
 /* Colour palette                                                     */
-/* ------------------------------------------------------------------ */
+
 #define CLR_BG          RGB(245, 225, 225)
 #define CLR_BANNER_BG   RGB(40,   8,   8)
 #define CLR_ACCENT      RGB(60, 160,  80)
