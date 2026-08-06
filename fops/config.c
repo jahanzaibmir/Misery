@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: MIT
-// config.c - Target definitions, extension filtering, and path exclusions
+
+// config.c 
 
 #include "fops_internal.h"
 #include "fops_log.h"
