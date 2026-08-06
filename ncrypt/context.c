@@ -1,5 +1,26 @@
-// SPDX-License-Identifier: MIT
-// context.c - Global state management, initialization, and cleanup
+
+// context.c 
+
+/*Author: Jahanzaib Ashraf Mir
+Kashmir
+CSE GRAD W/S in Cybersecurity
+Malware Researcher | Cybersecurity Engineer | Hacker
+Copyright © 2026. All Rights Reserved.
+
+This educational script and software is designed
+strictly for academic research and defensive analysis.
+No part of this script may be reproduced, published, distributed, modified,
+sold, rebranded, or executed on any unauthorized systems, networks, or servers,
+by any means or in any form, without prior written permission of the copyright owner.
+
+Unauthorized use, deployment, or duplication is strictly prohibited and may result
+in severe legal action under applicable copyright and computer crime statutes.
+
+THIS SOFTWARE IS PROVIDED "AS IS" FOR EDUCATIONAL PURPOSES ONLY.
+The author assumes zero liability and no responsibility for any misuse, damage,
+data loss, or illegal activity resulting from the execution of this code.
+Execution against non-consenting target systems is strictly illegal.*/
+
 
 #include "ncrypt_internal.h"
 #include <string.h>
@@ -55,7 +76,7 @@ CRYPTO_ERROR InitCrypto(const char *password, size_t passwordLen, BYTE *opt_salt
         return CRYPTO_ERR_KEY_GEN;
     }
     
-    // FIX: Check CryptHashData returns
+    // F Check CryptHashData returns
     if (!CryptHashData(hHash, (BYTE*)password, (DWORD)passwordLen, 0) ||
         !CryptHashData(hHash, g_nctx.salt, SALT_SIZE, 0)) {
         CryptDestroyHash(hHash);
