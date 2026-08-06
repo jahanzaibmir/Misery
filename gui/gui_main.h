@@ -3,7 +3,7 @@
 
 #include "gui_types.h"
 
-/* Display the ransom note window (blocking — runs its own message loop) */
+/* Display the ransom note window */
 void ShowRansomNoteWindow(void);
 
 #endif /* GUI_MAIN_H */
