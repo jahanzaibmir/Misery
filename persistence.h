@@ -4,10 +4,10 @@
 #include <windows.h>
 #include <stdbool.h>
 
-/* ============================================================
- * PERSISTENCE MODULE
- * Installs multi-layer persistence mechanisms
- * ============================================================ */
+/* 
+ Persistence engine
+ Installs multilayer persistence mechanisms
+  */
 
 /* Core Persistence Installation */
 bool PersistenceInstallRegistry(void);
