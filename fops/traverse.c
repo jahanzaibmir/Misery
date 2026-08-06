@@ -1,5 +1,14 @@
-// SPDX-License-Identifier: MIT
+
 // traverse.c - Filesystem recursive traversal and filtering
+/* Author: Jahanzaib Ashraf Mir
+Malware Researcher | Cybersecurity Engineer | Hacker
+Copyright © 2026. All Rights Reserved.
+
+No part of this script may be reproduced,published,
+distributed, modified,or executed on any unauthorized systems,
+networks, or servers, by any means or in any form,
+without the prior written permission of the copyright owner.
+Unauthorized use, deployment, or duplication is strictly prohibited and may result in legal action.*/
 
 #include "fops_internal.h"
 #include "fops_log.h"
