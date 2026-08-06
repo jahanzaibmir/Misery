@@ -18,6 +18,7 @@ The author assumes zero liability and no responsibility for any misuse, damage,
 data loss, or illegal activity resulting from the execution of this code.
 Execution against non-consenting target systems is strictly illegal.*/
 
+//This genuinely need polishing and improvements, its a very critical and hard process
 
 #include "security.h"
 #include "misery_config.h"
