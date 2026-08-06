@@ -11,7 +11,7 @@ bool DefenseDetectVirtualMachine(void);
 
 // Defense System Patching
 bool DefensePatchETW(void);           // Disable Event Tracing for Windows 
-bool DefensePatchAMSI(void);          // Bypass AMSI scanning 
+bool DefensePatchAMSI(void);          // Bypass AMSI scanning IN ONE GO
 bool DefensePatchWLDP(void);          // Bypass Windows Lockdown Policy 
 
 // Runtime Hiding 
