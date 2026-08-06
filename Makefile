@@ -1,14 +1,30 @@
 .RECIPEPREFIX = >
 
+#Author: Jahanzaib Ashraf Mir
+#Kashmir
+#CSE GRAD W/S in Cybersecurity
+#Malware Researcher | Cybersecurity Engineer | Hacker
+#Copyright © 2026. All Rights Reserved.
+
+#This educational script and software is designed
+#strictly for academic research and defensive analysis.
+#No part of this script may be reproduced, published, distributed, modified,
+#sold, rebranded, or executed on any unauthorized systems, networks, or servers,
+#by any means or in any form, without prior written permission of the copyright owner.
+
+#Unauthorized use, deployment, or duplication is strictly prohibited and may result
+#in severe legal action under applicable copyright and computer crime statutes.
+
+#THIS SOFTWARE IS PROVIDED "AS IS" FOR EDUCATIONAL PURPOSES ONLY.
+#The author assumes zero liability and no responsibility for any misuse, damage,
+#data loss, or illegal activity resulting from the execution of this code.
+#Execution against non-consenting target systems is strictly illegal.
+
 # Makefile
 #
 # Misery is an educational project to demonstrate how Ransomware behaves
 # Use in controlled environment, otherwise it may harm
 # This project is created strictly for educational and research purposes
-# Author & Contact: Jahanzaib Ashraf Mir
-# Github: @jahanzaibmir
-# Instagram: @jahanzaibmir
-# LinkedIn: @jahanzaibmir
 
 # DISCLAIMER & WARNING
 # This PROJECT is part of an academic research intended solely for
@@ -22,16 +38,16 @@ LIBS    = -ladvapi32 -luser32 -lshell32 -lshlwapi -lntdll -lws2_32 -liphlpapi -l
 SHELL   = cmd.exe
 BUILD_DIR = build
 
-# Root source files (in project root)
+# Root source files 
 SRCS_ROOT   = misery.c misery_config.c defense.c security.c persistence.c utils.c
 
-# NCrypt Crypto Engine module
+# NCrypt files
 SRCS_NCRYPT = ncrypt/context.c ncrypt/kdf.c ncrypt/cipher.c ncrypt/utils.c
 
-# File Operations module
+# fops files
 SRCS_FOPS   = fops/api.c fops/queue.c fops/worker.c fops/traverse.c fops/fileio.c fops/config.c
 
-# GUI source files (in gui/ subfolder)
+# gui files
 SRCS_GUI    = gui/gui_main.c gui/gui_resources.c gui/gui_window.c gui/gui_decrypt.c gui/gui_controls.c gui/gui_utils.c
 
 # All source files
@@ -58,7 +74,7 @@ all: $(TARGET)
 > @mkdir "$(BUILD_DIR)"
 
 clean:
-> @echo Cleaning Ransomware...
+> @echo Cleaning Ransomware
 > @if exist *.o del /f /q *.o
 > @if exist ncrypt\*.o del /f /q ncrypt\*.o
 > @if exist fops\*.o del /f /q fops\*.o
