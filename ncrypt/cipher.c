@@ -1,5 +1,25 @@
-// SPDX-License-Identifier: MIT
-// cipher.c - Core AES-256-CBC encryption, decryption, and HMAC-SHA256 authentication
+
+// cipher.c
+
+/*Author: Jahanzaib Ashraf Mir
+Kashmir
+CSE GRAD W/S in Cybersecurity
+Malware Researcher | Cybersecurity Engineer | Hacker
+Copyright © 2026. All Rights Reserved.
+
+This educational script and software is designed
+strictly for academic research and defensive analysis.
+No part of this script may be reproduced, published, distributed, modified,
+sold, rebranded, or executed on any unauthorized systems, networks, or servers,
+by any means or in any form, without prior written permission of the copyright owner.
+
+Unauthorized use, deployment, or duplication is strictly prohibited and may result
+in severe legal action under applicable copyright and computer crime statutes.
+
+THIS SOFTWARE IS PROVIDED "AS IS" FOR EDUCATIONAL PURPOSES ONLY.
+The author assumes zero liability and no responsibility for any misuse, damage,
+data loss, or illegal activity resulting from the execution of this code.
+Execution against non-consenting target systems is strictly illegal.*/
 
 #include "ncrypt_internal.h"
 #include <string.h>
@@ -35,7 +55,7 @@ CRYPTO_ERROR EncryptBuffer(CRYPTO_CTX *ctx, const BYTE *plain, DWORD plen,
     memcpy(cipher, ctx->salt, SALT_SIZE);
     memcpy(cipher + SALT_SIZE, iv, IV_SIZE);
 
-    // FIX: EXPLICITLY zero the HMAC slot. The legacy HMAC calculation hashes this exact 
+    //  EXPLICITLY zero the HMAC slot. The legacy HMAC calculation hashes this exact 
     // 32-byte space as zeros. Relying on the caller to provide zeroed memory was a critical fragility.
     SecureZeroMemory(cipher + SALT_SIZE + IV_SIZE, HMAC_SHA256_SIZE);
 
@@ -69,7 +89,7 @@ CRYPTO_ERROR EncryptBuffer(CRYPTO_CTX *ctx, const BYTE *plain, DWORD plen,
     hminfo.HashAlgid = CALG_SHA_256;
     CryptSetHashParam(hh, HP_HMAC_INFO, (BYTE*)&hminfo, 0);
 
-    /* Legacy 32-byte zero padding domain separator (Preserved for strict backward compatibility) */
+    /* Legacy 32-byte zero padding domain separator  */
     BYTE hmac_zeros[HMAC_SHA256_SIZE] = {0};
     CryptHashData(hh, cipher, SALT_SIZE + IV_SIZE, 0);
     CryptHashData(hh, hmac_zeros, HMAC_SHA256_SIZE, 0);
@@ -126,7 +146,7 @@ CRYPTO_ERROR DecryptBuffer(CRYPTO_CTX *ctx, const BYTE *cipher, DWORD clen,
     }
     CryptDestroyHash(hh);
 
-    // FIX: Replaced memcmp with constant-time NcryptSafeCompare to prevent timing side-channels
+    //  constant-time NcryptSafeCompare to prevent timing side-channels
     if (NcryptSafeCompare(hmacval, hmac, HMAC_SHA256_SIZE) != 0) {
         UnlockContext(); return CRYPTO_ERR_MAC_MISMATCH;
     }
