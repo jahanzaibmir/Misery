@@ -1,8 +1,16 @@
 #include "gui_resources.h"
 
-/* ------------------------------------------------------------------ */
+/* Author: Jahanzaib Ashraf Mir
+Malware Researcher | Cybersecurity Engineer | Hacker
+Copyright © 2026. All Rights Reserved.
+
+No part of this script may be reproduced,published,
+distributed, modified,or executed on any unauthorized systems,
+networks, or servers, by any means or in any form,
+without the prior written permission of the copyright owner.
+Unauthorized use, deployment, or duplication is strictly prohibited and may result in legal action.*/
+
 /* GDI resource globals                                               */
-/* ------------------------------------------------------------------ */
 HBRUSH  g_hbrBanner    = NULL;
 HBRUSH  g_hbrBg        = NULL;
 HBRUSH  g_hbrCard      = NULL;
@@ -19,9 +27,8 @@ HFONT   g_hFontMono    = NULL;
 HFONT   g_hFontName    = NULL;
 HFONT   g_hFontTimer   = NULL;
 
-/* ------------------------------------------------------------------ */
+
 /* CreateResources — allocate all brushes and fonts                    */
-/* ------------------------------------------------------------------ */
 void CreateResources(void) {
     g_hbrBanner    = CreateSolidBrush(CLR_BANNER_BG);
     g_hbrBg        = CreateSolidBrush(CLR_BG);
@@ -61,9 +68,8 @@ void CreateResources(void) {
     g_hFontTimer = CreateFontIndirectW(&lf);
 }
 
-/* ------------------------------------------------------------------ */
-/* DestroyResources — free all GDI resources                          */
-/* ------------------------------------------------------------------ */
+/* DestroyResources                          */
+
 void DestroyResources(void) {
     if (g_hbrBanner)    DeleteObject(g_hbrBanner);
     if (g_hbrBg)        DeleteObject(g_hbrBg);
