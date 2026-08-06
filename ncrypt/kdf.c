@@ -1,6 +1,25 @@
-// SPDX-License-Identifier: MIT
-// kdf.c - Custom Key Derivation Logic for AES-256 and HMAC-SHA256
 
+// kdf.c 
+
+/*Author: Jahanzaib Ashraf Mir
+Kashmir
+CSE GRAD W/S in Cybersecurity
+Malware Researcher | Cybersecurity Engineer | Hacker
+Copyright © 2026. All Rights Reserved.
+
+This educational script and software is designed
+strictly for academic research and defensive analysis.
+No part of this script may be reproduced, published, distributed, modified,
+sold, rebranded, or executed on any unauthorized systems, networks, or servers,
+by any means or in any form, without prior written permission of the copyright owner.
+
+Unauthorized use, deployment, or duplication is strictly prohibited and may result
+in severe legal action under applicable copyright and computer crime statutes.
+
+THIS SOFTWARE IS PROVIDED "AS IS" FOR EDUCATIONAL PURPOSES ONLY.
+The author assumes zero liability and no responsibility for any misuse, damage,
+data loss, or illegal activity resulting from the execution of this code.
+Execution against non-consenting target systems is strictly illegal.*/
 #include "ncrypt_internal.h"
 #include <string.h>
 
@@ -24,7 +43,7 @@ CRYPTO_ERROR NcryptDeriveKeys(HCRYPTPROV hProv,
     if (!CryptCreateHash(hProv, CALG_SHA_256, 0, 0, &hHash)) {
         err = CRYPTO_ERR_KEY_GEN; goto cleanup;
     }
-    // FIX: Check all CryptHashData return values to prevent silent key corruption
+    // Check all CryptHashData return values to prevent silent key corruption
     if (!CryptHashData(hHash, (BYTE*)aesCtx, (DWORD)strlen(aesCtx), 0) ||
         !CryptHashData(hHash, inputKey, inputLen, 0) ||
         !CryptHashData(hHash, salt, SALT_SIZE, 0)) {
