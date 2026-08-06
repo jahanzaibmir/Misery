@@ -56,7 +56,7 @@ int hex_to_bytes(const char *hex, size_t hexLen, unsigned char *out, size_t outL
 }
 
 const char *GetErrorString(CRYPTO_ERROR error) {
-    // FIX: Thread-Local Storage prevents race conditions when multiple threads log errors simultaneously
+    //  Thread Local Storage prevents race conditions when multiple threads log errors simultaneously
     __declspec(thread) static const char *err[] = {
         "Success","Invalid parameter","Memory alloc fail","Crypto init fail",
         "Key gen fail","Encryption fail","Decryption fail","MAC verify fail",
