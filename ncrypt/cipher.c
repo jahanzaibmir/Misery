@@ -146,7 +146,7 @@ CRYPTO_ERROR DecryptBuffer(CRYPTO_CTX *ctx, const BYTE *cipher, DWORD clen,
     }
     CryptDestroyHash(hh);
 
-    //  constant-time NcryptSafeCompare to prevent timing side-channels
+    //  constant time NcryptSafeCompare to prevent timing side-channels
     if (NcryptSafeCompare(hmacval, hmac, HMAC_SHA256_SIZE) != 0) {
         UnlockContext(); return CRYPTO_ERR_MAC_MISMATCH;
     }
