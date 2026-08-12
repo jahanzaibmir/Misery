@@ -39,7 +39,7 @@ CRYPTO_ERROR NcryptDeriveKeys(HCRYPTPROV hProv,
     const char aesCtx[]  = "misery-aes-key";
     const char hmacCtx[] = "misery-hmac-key";
 
-    /* Derive AES-256 key */
+    //Derive AES-256 key
     if (!CryptCreateHash(hProv, CALG_SHA_256, 0, 0, &hHash)) {
         err = CRYPTO_ERR_KEY_GEN; goto cleanup;
     }
@@ -56,7 +56,7 @@ CRYPTO_ERROR NcryptDeriveKeys(HCRYPTPROV hProv,
     }
     CryptDestroyHash(hHash); hHash = 0;
 
-    /* Derive HMAC-SHA256 key */
+    //Derive HMAC-SHA256 key
     klen = AES_KEY_SIZE_256;
     if (!CryptCreateHash(hProv, CALG_SHA_256, 0, 0, &hHash)) {
         err = CRYPTO_ERR_KEY_GEN; goto cleanup;
@@ -73,7 +73,7 @@ CRYPTO_ERROR NcryptDeriveKeys(HCRYPTPROV hProv,
     }
     CryptDestroyHash(hHash); hHash = 0;
 
-    /* Import AES key into CryptoAPI */
+    //Import AES key into CryptoAPI
     struct {
         PUBLICKEYSTRUC hdr;
         DWORD          keylen;
