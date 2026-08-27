@@ -112,7 +112,7 @@ bool MiseryPhaseTransition(MISERY_PHASE newPhase, bool success) {
 }
 
 void MiseryReportStats(void) {
-    MiseryLog(MISERY_LOG_INFO, "=== EXECUTION STATISTICS ===");
+    MiseryLog(MISERY_LOG_INFO, "EXECUTION STATISTICs");
     MiseryLog(MISERY_LOG_INFO, "Version: %s (Built: %s)", MISERY_VERSION, MISERY_BUILD_DATE);
     MiseryLog(MISERY_LOG_INFO, "Execution Time: %lu ms", g_misery_ctx.executionTimeMs);
     MiseryLog(MISERY_LOG_INFO, "Files Encrypted: %lu / %lu",
@@ -134,7 +134,7 @@ bool MiseryInitContext(void) {
     g_misery_ctx.filesFailed = 0;
     g_misery_ctx.bytesEncrypted = 0;
 
-    MiseryLog(MISERY_LOG_INFO, "=== MISERY v%s INITIALIZATION ===", MISERY_VERSION);
+    MiseryLog(MISERY_LOG_INFO, "initialation", MISERY_VERSION);
     return true;
 }
 
