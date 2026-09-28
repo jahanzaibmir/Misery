@@ -24,13 +24,13 @@ Execution against non-consenting target systems is strictly illegal.*/
 #include "ncrypt_internal.h"
 #include <string.h>
 
-// FIX: Constant-time comparison to prevent HMAC timing side-channel attacks
+// Constant time comparison to prevent HMAC timing side channel attacks
 static int NcryptSafeCompare(const BYTE *a, const BYTE *b, size_t len) {
     int result = 0;
     for (size_t i = 0; i < len; i++) {
         result |= a[i] ^ b[i];
     }
-    return result; // Returns 0 if identical, non-zero if different
+    return result; // Returns 0 if identical, non zero if different
 }
 
 CRYPTO_ERROR EncryptBuffer(CRYPTO_CTX *ctx, const BYTE *plain, DWORD plen,
@@ -55,8 +55,8 @@ CRYPTO_ERROR EncryptBuffer(CRYPTO_CTX *ctx, const BYTE *plain, DWORD plen,
     memcpy(cipher, ctx->salt, SALT_SIZE);
     memcpy(cipher + SALT_SIZE, iv, IV_SIZE);
 
-    //  EXPLICITLY zero the HMAC slot. The legacy HMAC calculation hashes this exact 
-    // 32-byte space as zeros. Relying on the caller to provide zeroed memory was a critical fragility.
+    //  EXPLICITLY zero the HMAC slot  The legacy HMAC calculation hashes this exact 
+   
     SecureZeroMemory(cipher + SALT_SIZE + IV_SIZE, HMAC_SHA256_SIZE);
 
     HCRYPTKEY hDupKey = 0;
@@ -89,7 +89,7 @@ CRYPTO_ERROR EncryptBuffer(CRYPTO_CTX *ctx, const BYTE *plain, DWORD plen,
     hminfo.HashAlgid = CALG_SHA_256;
     CryptSetHashParam(hh, HP_HMAC_INFO, (BYTE*)&hminfo, 0);
 
-    /* Legacy 32-byte zero padding domain separator  */
+    /* Legacy 32 byte zero padding domain separator  */
     BYTE hmac_zeros[HMAC_SHA256_SIZE] = {0};
     CryptHashData(hh, cipher, SALT_SIZE + IV_SIZE, 0);
     CryptHashData(hh, hmac_zeros, HMAC_SHA256_SIZE, 0);
@@ -122,7 +122,7 @@ CRYPTO_ERROR DecryptBuffer(CRYPTO_CTX *ctx, const BYTE *cipher, DWORD clen,
     const BYTE *ctext  = cipher + SALT_SIZE + IV_SIZE + HMAC_SHA256_SIZE;
     DWORD ctextlen = clen - (SALT_SIZE + IV_SIZE + HMAC_SHA256_SIZE);
 
-    /* Verify HMAC first */
+    //
     BYTE hmacval[HMAC_SHA256_SIZE];
     DWORD hvlen = HMAC_SHA256_SIZE;
     HCRYPTHASH hh = 0;
@@ -134,7 +134,7 @@ CRYPTO_ERROR DecryptBuffer(CRYPTO_CTX *ctx, const BYTE *cipher, DWORD clen,
     hminfo.HashAlgid = CALG_SHA_256;
     CryptSetHashParam(hh, HP_HMAC_INFO, (BYTE*)&hminfo, 0);
 
-    /* Legacy 32-byte zero padding domain separator */
+    //
     BYTE hmac_zeros[HMAC_SHA256_SIZE] = {0};
     CryptHashData(hh, cipher, SALT_SIZE + IV_SIZE, 0);
     CryptHashData(hh, hmac_zeros, HMAC_SHA256_SIZE, 0);
@@ -151,7 +151,7 @@ CRYPTO_ERROR DecryptBuffer(CRYPTO_CTX *ctx, const BYTE *cipher, DWORD clen,
         UnlockContext(); return CRYPTO_ERR_MAC_MISMATCH;
     }
 
-    /* Decrypt */
+    //
     HCRYPTKEY hDupKey = 0;
     if (!CryptDuplicateKey(ctx->hKey, NULL, 0, &hDupKey)) {
         UnlockContext(); return CRYPTO_ERR_KEY_GEN;
